@@ -4,9 +4,12 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.Serialization.Formatters.Binary;
 using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
+using GameNetcodeStuff;
 using HarmonyLib;
 using LethalLib.Modules;
+using Unity.Collections;
 using UnityEngine;
 using Unity.Netcode;
 using NetworkPrefabs = LethalLib.Modules.NetworkPrefabs;
@@ -26,6 +29,8 @@ namespace LethalCompanyVileVendingMachine
         private readonly ManualLogSource _mls = BepInEx.Logging.Logger.CreateLogSource(ModGuid);
 
         private static VileVendingMachinePlugin _instance;
+        
+        public static VolatileVendingMachineConfig VolatileVendingMachineConfig { get; internal set; }
 
         private static EnemyType _vileVendingMachineEnemyType;
 
@@ -45,6 +50,7 @@ namespace LethalCompanyVileVendingMachine
             }
             
             _harmony.PatchAll();
+            VolatileVendingMachineConfig = new VolatileVendingMachineConfig(Config);
 
             SetupVileVendingMachine();
             SetupCompanyCola();
@@ -103,6 +109,125 @@ namespace LethalCompanyVileVendingMachine
             }
         }
     }
+
+    public class VolatileVendingMachineConfig : SyncedInstance<VolatileVendingMachineConfig>
+    {
+        // Spawn values
+        public readonly ConfigEntry<bool> CanSpawnAtMainDoorMaster;
+        public readonly ConfigEntry<bool> CanSpawnAtFireExitMaster;
+        public readonly ConfigEntry<bool> CanSpawnOutsideMaster;
+        public readonly ConfigEntry<bool> CanSpawnInsideMaster;
+        public readonly ConfigEntry<bool> CanHaveLeftAndRightPerDoor;
+
+        public VolatileVendingMachineConfig(ConfigFile cfg)
+        {
+            InitInstance(this);
+
+            CanSpawnAtMainDoorMaster = cfg.Bind(
+                "Spawn Values",
+                "Can Spawn at Main Entrance",
+                true,
+                "Whether the vending machine can spawn at the main entrance"
+                );
+            
+            CanSpawnAtFireExitMaster = cfg.Bind(
+                "Spawn Values",
+                "Can Spawn at Fire Exit",
+                true,
+                "Whether the vending machine can spawn at a fire exit"
+            );
+            
+            CanSpawnOutsideMaster = cfg.Bind(
+                "Spawn Values",
+                "Can Spawn Outside",
+                true,
+                "Whether the vending machine can spawn outside"
+            );
+            
+            CanSpawnInsideMaster = cfg.Bind(
+                "Spawn Values",
+                "Can Spawn Inside",
+                true,
+                "Whether the vending machine can spawn inside the dungeon"
+            );
+            
+            CanHaveLeftAndRightPerDoor = cfg.Bind(
+                "Spawn Values",
+                "Can Spawn at the Left and Right",
+                false,
+                "Whether there could be a vending machine to the left of the door, and another to the right of the door"
+            );
+        }
+        
+        private static void RequestSync() {
+            if (!IsClient) return;
+
+            using FastBufferWriter stream = new(IntSize, Allocator.Temp);
+            MessageManager.SendNamedMessage($"{VileVendingMachinePlugin.ModGuid}_OnRequestConfigSync", 0uL, stream);
+        }
+
+        private static void OnRequestSync(ulong clientId, FastBufferReader _) {
+            if (!IsHost) return;
+
+            Debug.Log($"Config sync request received from client: {clientId}");
+
+            byte[] array = SerializeToBytes(Instance);
+            int value = array.Length;
+
+            using FastBufferWriter stream = new(value + IntSize, Allocator.Temp);
+
+            try {
+                stream.WriteValueSafe(in value);
+                stream.WriteBytesSafe(array);
+
+                MessageManager.SendNamedMessage($"{VileVendingMachinePlugin.ModGuid}_OnReceiveConfigSync", clientId, stream);
+            } catch(Exception e) {
+                Debug.Log($"Error occurred syncing config with client: {clientId}\n{e}");
+            }
+        }
+
+        private static void OnReceiveSync(ulong _, FastBufferReader reader) {
+            if (!reader.TryBeginRead(IntSize)) {
+                Debug.LogError("Config sync error: Could not begin reading buffer.");
+                return;
+            }
+
+            reader.ReadValueSafe(out int val);
+            if (!reader.TryBeginRead(val)) {
+                Debug.LogError("Config sync error: Host could not sync.");
+                return;
+            }
+
+            byte[] data = new byte[val];
+            reader.ReadBytesSafe(ref data, val);
+
+            SyncInstance(data);
+
+            Debug.Log("Successfully synced config with host.");
+        }
+        
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(PlayerControllerB), "ConnectClientToPlayerObject")]
+        public static void InitializeLocalPlayer() {
+            if (IsHost) {
+                MessageManager.RegisterNamedMessageHandler($"{VileVendingMachinePlugin.ModGuid}_OnRequestConfigSync", OnRequestSync);
+                Synced = true;
+
+                return;
+            }
+
+            Synced = false;
+            MessageManager.RegisterNamedMessageHandler($"{VileVendingMachinePlugin.ModGuid}_OnReceiveConfigSync", OnReceiveSync);
+            RequestSync();
+        }
+        
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(GameNetworkManager), "StartDisconnect")]
+        public static void PlayerLeave() {
+            RevertSync();
+        }
+    }
+    
     
     [Serializable]
     public class SyncedInstance<T>

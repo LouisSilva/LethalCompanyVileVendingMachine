@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using BepInEx.Logging;
 using GameNetcodeStuff;
-using HarmonyLib;
 using Unity.Netcode;
 using UnityEngine;
 using Logger = BepInEx.Logging.Logger;
@@ -47,9 +47,11 @@ public class VileVendingMachineServer : EnemyAI
 
     public override void OnDestroy()
     {
-        netcodeController.OnDespawnHeldItem -= HandleDespawnHeldItem; ;
+        netcodeController.OnDespawnHeldItem -= HandleDespawnHeldItem;
         netcodeController.OnSpawnCola -= HandleSpawnCola;
-    }   
+        
+        VendingMachineRegistry.RemoveVendingMachine(_vendingMachineId);
+    }
 
     public override void Start()
     {
@@ -59,7 +61,7 @@ public class VileVendingMachineServer : EnemyAI
         _vendingMachineId = Guid.NewGuid().ToString();
         _mls = Logger.CreateLogSource(
             $"{VileVendingMachinePlugin.ModGuid} | Volatile Vending Machine Server {_vendingMachineId}");
-        
+
         netcodeController.UpdateVendingMachineIdClientRpc(_vendingMachineId);
         netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
         netcodeController.OnSpawnCola += HandleSpawnCola;
@@ -69,11 +71,24 @@ public class VileVendingMachineServer : EnemyAI
         triggerScript.tag = nameof(InteractTrigger);
         triggerScript.interactCooldown = false;
         triggerScript.cooldownTime = 0;
-        
+
         agent.updateRotation = false;
         agent.updatePosition = false;
-        if (IsServer) StartCoroutine(PlaceVendingMachine(() => 
-            { netcodeController.ChangeAnimationParameterBoolClientRpc(_vendingMachineId, VileVendingMachineClient.ArmAccept, true);}));
+
+        try
+        {
+            if (IsServer)
+                StartCoroutine(PlaceVendingMachine(() =>
+                {
+                    netcodeController.ChangeAnimationParameterBoolClientRpc(_vendingMachineId,
+                        VileVendingMachineClient.ArmAccept, true);
+                }));
+        }
+        catch (Exception)
+        {
+            VendingMachineRegistry.IsPlacementInProgress = false;
+            throw;
+        }
     }
 
     public override void Update()
@@ -90,82 +105,134 @@ public class VileVendingMachineServer : EnemyAI
 
     private IEnumerator PlaceVendingMachine(Action callback = null)
     {
-        EntranceTeleport[] doors = GetDoors();
-        foreach (EntranceTeleport door in doors)
-        {
-            Vector3 vectorA = door.entrancePoint.position - door.transform.position;
-            Vector3 vectorB = Vector3.Cross(vectorA, Vector3.up).normalized;
-
-            vectorA.y = 0;
-            transform.position = door.transform.position + vectorA.normalized * -0.5f;
-            transform.rotation = Quaternion.LookRotation(vectorA);
-            
-            while (!IsColliderAgainstWall(backCollider) && IsColliderColliding(frontCollider))
-            {
-                transform.position += vectorA.normalized * 0.1f;
-                yield return new WaitForSeconds(0.01f);
-            }
-
-            Vector3 floorRayStart = transform.position + Vector3.up * 0.5f;
-            if (Physics.Raycast(floorRayStart, -Vector3.up, out RaycastHit hit, 8f, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
-            {
-                transform.position = new Vector3(transform.position.x,
-                    hit.point.y + floorCollider.transform.localPosition.y, transform.position.z);
-            }
-            
-            // Cast ray to left
-            float leftDistance;
-            if (Physics.Raycast(transform.position, -transform.right, out RaycastHit hit2, 50f, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
-            {
-                leftDistance = hit2.distance;
-                if (hit2.collider.CompareTag("VolatileVendingMachine"))
-                    leftDistance = 0;
-            }
-            else
-            {
-                leftDistance = 999999;
-                LogDebug("No object found to the left");
-            }
-            
-            // Cast ray to right
-            float rightDistance;
-            if (Physics.Raycast(transform.position, transform.right, out RaycastHit hit3, 50f, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
-            {
-                rightDistance = hit3.distance;
-                if (hit3.collider.CompareTag("VolatileVendingMachine"))
-                    rightDistance = 0;
-            }
-            else
-            {
-                rightDistance = 999999;
-                LogDebug("No object found to the right");
-            }
-
-            float distanceToDoor = leftDistance > rightDistance ? leftDistance : rightDistance;
-            if (distanceToDoor <= 0) continue;
-            
-            distanceToDoor = Mathf.Clamp(distanceToDoor, 1f, 3f);
-            transform.position += vectorB * distanceToDoor;
-            
-            Destroy(frontCollider.gameObject);
-            Destroy(backCollider.gameObject);
-            Destroy(floorCollider.gameObject);
-
-            // Rigidbody rigidbody = gameObject.AddComponent<Rigidbody>();
-            // rigidbody.isKinematic = true;
-            
-            if (callback == null) yield break;
-            yield return new WaitForSeconds(0.5f);
-            callback.Invoke();
-            yield break;
-        }
+        while (VendingMachineRegistry.IsPlacementInProgress) yield return new WaitForSeconds(1);
         
+        VendingMachineRegistry.IsPlacementInProgress = true;
+        EntranceTeleport[] doors = GetDoorTeleports();
+        for (int i = 0; i < 2; i++)
+        {
+            if (!VolatileVendingMachineConfig.Instance.CanSpawnOutsideMaster.Value && i == (int)EntranceOrExit.Entrance)
+                continue;
+
+            if (!VolatileVendingMachineConfig.Instance.CanSpawnInsideMaster.Value && i == (int)EntranceOrExit.Exit)
+                continue;
+            
+            foreach (EntranceTeleport door in doors)
+            {
+                if (!VolatileVendingMachineConfig.Instance.CanSpawnAtMainDoorMaster.Value && door.entranceId == 0)
+                    continue;
+
+                if (!VolatileVendingMachineConfig.Instance.CanSpawnAtFireExitMaster.Value && door.entranceId != 0)
+                    continue;
+
+                if (VendingMachineRegistry.IsDoorOccupied(door, i))
+                {
+                    continue;
+                }
+
+                Vector3 doorPosition = default;
+                Tuple<Transform, int>[] doorTransforms = GetDoorTransforms(door.entranceId);
+                foreach (Tuple<Transform, int> doorTransformTuple in doorTransforms)
+                {
+                    if (doorTransformTuple.Item2 != i) continue;
+                    doorPosition = doorTransformTuple.Item1.position;
+                    break;
+                }
+
+                Vector3 teleportPosition = i == (int)EntranceOrExit.Entrance
+                    ? door.entrancePoint.position
+                    : door.exitPoint.position;
+                
+                Vector3 vectorA = teleportPosition - doorPosition;
+                Vector3 vectorB = Vector3.Cross(vectorA, Vector3.up).normalized;
+                DrawDebugCircleAtPosition(doorPosition);
+
+                vectorA.y = 0;
+                transform.position = doorPosition + vectorA.normalized * -1f;
+                transform.rotation = Quaternion.LookRotation(vectorA);
+
+                while (!IsColliderAgainstWall(backCollider) && IsColliderColliding(frontCollider))
+                {
+                    transform.position += vectorA.normalized * 0.1f;
+                    yield return new WaitForSeconds(0.01f);
+                }
+
+                // Move vending machine to the floor
+                Vector3 floorRayStart = transform.position + Vector3.up * 0.5f;
+                if (Physics.Raycast(floorRayStart, -Vector3.up, out RaycastHit hit, 8f,
+                        StartOfRound.Instance.collidersAndRoomMaskAndDefault))
+                {
+                    transform.position = new Vector3(transform.position.x,
+                        hit.point.y + floorCollider.transform.localPosition.y, transform.position.z);
+                }
+
+                float leftDistance = GetDistanceToObjectInDirection(-transform.right, 50f);
+                float rightDistance = GetDistanceToObjectInDirection(transform.right, 50f);
+
+                float distanceToDoor = leftDistance > rightDistance ? leftDistance : rightDistance;
+                if (distanceToDoor == 0) continue;
+
+                int leftOrRight = leftDistance > rightDistance ? (int)LeftOrRight.Left : (int)LeftOrRight.Right;
+                distanceToDoor = Mathf.Clamp(distanceToDoor, 1f, 3f);
+                transform.position += vectorB * distanceToDoor;
+
+                Destroy(frontCollider.gameObject);
+                Destroy(backCollider.gameObject);
+                Destroy(floorCollider.gameObject);
+
+                // Rigidbody rigidbody = gameObject.AddComponent<Rigidbody>();
+                // rigidbody.isKinematic = true;
+
+                VendingMachineRegistry.AddVendingMachine(_vendingMachineId, door, leftOrRight, i);
+                VendingMachineRegistry.IsPlacementInProgress = false;
+                if (callback == null) yield break;
+                yield return new WaitForSeconds(0.5f);
+                callback.Invoke();
+                yield break;
+            }
+        }
+
         LogDebug("Vending machine could not be placed");
+        VendingMachineRegistry.IsPlacementInProgress = false;
+        KillEnemyClientRpc(true);
     }
 
-    private EntranceTeleport[] GetDoors()
+    private float GetDistanceToObjectInDirection(Vector3 direction, float maxDistance = 50f)
     {
-        return FindObjectsOfType<EntranceTeleport>().Where(t => t != null && t.exitPoint != null).ToArray();
+        float distance = 0f;
+        if (Physics.Raycast(transform.position, direction, out RaycastHit hit3, maxDistance, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
+        {
+            distance = hit3.distance;
+        }
+        else
+        {
+            distance = 999999;
+            LogDebug("No object found");
+        }
+
+        return distance;
+    }
+    
+    private EntranceTeleport[] GetDoorTeleports()
+    {
+        return FindObjectsOfType<EntranceTeleport>().Where(t => t != null && t.exitPoint != null && t.isEntranceToBuilding).ToArray();
+    }
+
+    private Tuple<Transform, int>[] GetDoorTransforms(int entranceId)
+    {
+        EntranceTeleport[] allTeleports = FindObjectsOfType<EntranceTeleport>().ToArray();
+        List<EntranceTeleport> matchedTeleports = allTeleports.Where(t => t.entranceId == entranceId).ToList();
+        
+        EntranceTeleport entrance = matchedTeleports.FirstOrDefault(t => t.isEntranceToBuilding);
+        EntranceTeleport exit = matchedTeleports.FirstOrDefault(t => t.isEntranceToBuilding == false);
+
+        Transform entranceTransform = entrance == null ? default : entrance.transform;
+        Transform exitTransform = exit == null ? default : exit.transform;
+        
+        Tuple<Transform, int> entranceTuple = new(entranceTransform, (int)EntranceOrExit.Entrance);
+        Tuple<Transform, int> exitTuple = new(exitTransform, (int)EntranceOrExit.Exit);
+
+        return [entranceTuple, exitTuple];
     }
 
     private void HandleSpawnCola(string recievedVendingMachineId)
@@ -382,6 +449,11 @@ public class VileVendingMachineServer : EnemyAI
         // }
         
         return doors[UnityEngine.Random.Range(0, doors.Length - 1)];
+    }
+
+    public string GetId()
+    {
+        return _vendingMachineId;
     }
     
     private void LogDebug(string msg)

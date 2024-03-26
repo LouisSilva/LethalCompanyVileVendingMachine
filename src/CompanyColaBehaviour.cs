@@ -66,6 +66,7 @@ public class CompanyColaBehaviour : PhysicsProp
 
     public void UpdateScrapValue(int value)
     {
+        // Two scan node property scripts are needed, because the rigidbody somehow makes the scan node gameobject "hidden"
         ScanNodeProperties scanNode1 = GetComponent<ScanNodeProperties>();
         if (scanNode1 != null)
         {

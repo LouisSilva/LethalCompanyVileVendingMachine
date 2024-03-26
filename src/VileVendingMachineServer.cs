@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using BepInEx.Logging;
 using GameNetcodeStuff;
+using HarmonyLib;
 using Unity.Netcode;
 using UnityEngine;
 using Logger = BepInEx.Logging.Logger;
@@ -18,22 +19,21 @@ public class VileVendingMachineServer : EnemyAI
     private string _vendingMachineId;
 
     [SerializeField] private InteractTrigger triggerScript;
-    private GrabbableObject _itemOnHand;
+    private bool _isItemOnHand = false;
 
     [Header("AI")]
     [Space(5f)]
     [SerializeField] private float annoyanceLevel = 0f;
     [SerializeField] private float annoyanceThreshold = 3f;
-    
+
     [Header("Colliders and Transforms")]
     [Space(5f)]
 #pragma warning disable 0649
-    [SerializeField] private BoxCollider itemHolder;
     [SerializeField] private BoxCollider frontCollider;
     [SerializeField] private BoxCollider backCollider;
     [SerializeField] private BoxCollider floorCollider;
     [SerializeField] private Transform colaPlaceholder;
-    [SerializeField] private GameObject testColaPrefab;
+    [SerializeField] private Transform itemHolder;
     
     [Header("Controllers")]
     [Space(5f)]
@@ -47,8 +47,7 @@ public class VileVendingMachineServer : EnemyAI
 
     public override void OnDestroy()
     {
-        netcodeController.OnDespawnHeldItem -= HandleDespawnHeldItem;
-        netcodeController.OnUpdateServerHeldItemCopy -= HandleUpdateServerHeldItemCopy;
+        netcodeController.OnDespawnHeldItem -= HandleDespawnHeldItem; ;
         netcodeController.OnSpawnCola -= HandleSpawnCola;
     }   
 
@@ -63,16 +62,7 @@ public class VileVendingMachineServer : EnemyAI
         
         netcodeController.UpdateVendingMachineIdClientRpc(_vendingMachineId);
         netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
-        netcodeController.OnUpdateServerHeldItemCopy += HandleUpdateServerHeldItemCopy;
         netcodeController.OnSpawnCola += HandleSpawnCola;
-
-        foreach (BoxCollider collider in GetComponentsInChildren<BoxCollider>())
-        {
-            if (collider.name != "ItemHolder") continue;
-            
-            itemHolder = collider;
-            break;
-        }
 
         triggerScript = GetComponentInChildren<InteractTrigger>();
         triggerScript.onInteract.AddListener(InteractVendingMachine);
@@ -96,12 +86,6 @@ public class VileVendingMachineServer : EnemyAI
     {
         base.DoAIInterval();
         if (!IsServer) return;
-    }
-
-    private void InteractVendingMachine(PlayerControllerB playerInteractor)
-    {
-        if (!playerInteractor.isHoldingObject) return;
-        PlaceItemInHand(ref playerInteractor);
     }
 
     private IEnumerator PlaceVendingMachine(Action callback = null)
@@ -163,9 +147,12 @@ public class VileVendingMachineServer : EnemyAI
             distanceToDoor = Mathf.Clamp(distanceToDoor, 1f, 3f);
             transform.position += vectorB * distanceToDoor;
             
-            Destroy(frontCollider);
-            Destroy(backCollider);
-            Destroy(floorCollider);
+            Destroy(frontCollider.gameObject);
+            Destroy(backCollider.gameObject);
+            Destroy(floorCollider.gameObject);
+
+            // Rigidbody rigidbody = gameObject.AddComponent<Rigidbody>();
+            // rigidbody.isKinematic = true;
             
             if (callback == null) yield break;
             yield return new WaitForSeconds(0.5f);
@@ -179,19 +166,6 @@ public class VileVendingMachineServer : EnemyAI
     private EntranceTeleport[] GetDoors()
     {
         return FindObjectsOfType<EntranceTeleport>().Where(t => t != null && t.exitPoint != null).ToArray();
-    }
-
-    private EntranceTeleport GetRandomDoor()
-    {
-        EntranceTeleport[] doors = FindObjectsOfType<EntranceTeleport>().Where(t => t != null && t.exitPoint != null).ToArray();
-        // foreach (EntranceTeleport door in doors)
-        // {
-        //     DrawDebugHorizontalLineAtTransform(door.transform, Color.green);
-        //     DrawDebugHorizontalLineAtTransform(door.entrancePoint, Color.red);
-        //     DrawDebugLineAtTransformForward(door.transform, Color.blue);
-        // }
-        
-        return doors[UnityEngine.Random.Range(0, doors.Length - 1)];
     }
 
     private void HandleSpawnCola(string recievedVendingMachineId)
@@ -220,10 +194,25 @@ public class VileVendingMachineServer : EnemyAI
         CompanyColaBehaviour colaBehaviour = colaObject.GetComponent<CompanyColaBehaviour>();
         if (colaBehaviour == null) _mls.LogError("colaBehaviour is null");
         colaBehaviour.isPartOfVendingMachine = true;
-
         int colaScrapValue = UnityEngine.Random.Range(60, 91);
-        colaObject.GetComponent<GrabbableObject>().fallTime = 0f;
+
+        // ScanNodeProperties scanNode = colaObject.GetComponent<ScanNodeProperties>();
+        // if (scanNode == null)
+        // {
+        //     scanNode = colaObject.AddComponent<ScanNodeProperties>();
+        //     scanNode.scrapValue = colaScrapValue;
+        //     scanNode.headerText = "Company Cola";
+        //     scanNode.subText = $"Value: {colaScrapValue}";
+        //     scanNode.maxRange = 13;
+        //     scanNode.minRange = 1;
+        //     scanNode.requiresLineOfSight = true;
+        //     scanNode.creatureScanID = -1;
+        //     scanNode.nodeType = 2;
+        // }
+        
+        colaObject.GetComponent<GrabbableObject>().fallTime = 1f;
         colaObject.GetComponent<GrabbableObject>().SetScrapValue(colaScrapValue);
+        colaBehaviour.UpdateScrapValue(colaScrapValue);
         RoundManager.Instance.totalScrapValueInLevel += colaScrapValue;
         
         colaObject.GetComponent<NetworkObject>().Spawn();
@@ -235,20 +224,33 @@ public class VileVendingMachineServer : EnemyAI
     {
         if (!IsServer) return;
         if (recievedVendingMachineId != _vendingMachineId) return;
-        if (_itemOnHand == null)
+        
+        NetworkObject[] grabbableObjects = itemHolder.GetComponentsInChildren<NetworkObject>();
+        if (grabbableObjects.Length <= 0)
         {
             _mls.LogWarning("ItemOnHand is null, unable to despawn object");
             return;
         }
-        
-        _itemOnHand.NetworkObject.Despawn();
+
+        foreach (NetworkObject grabbableObject in grabbableObjects)
+        {
+            grabbableObject.Despawn();
+        }
+
+        _isItemOnHand = false;
+    }
+    
+    private void InteractVendingMachine(PlayerControllerB playerInteractor)
+    {
+        if (!playerInteractor.isHoldingObject) return;
+        PlaceItemInHand(ref playerInteractor);
     }
     
     private void PlaceItemInHand(ref PlayerControllerB playerInteractor)
     {
-        if (_itemOnHand != null || GameNetworkManager.Instance == null) return;
-        
-        _itemOnHand = playerInteractor.currentlyHeldObjectServer;
+        if (_isItemOnHand || GameNetworkManager.Instance == null) return;
+
+        _isItemOnHand = false;
         netcodeController.ChangeTargetPlayerClientRpc(_vendingMachineId, (int)playerInteractor.actualClientId);
         netcodeController.PlayerDiscardHeldObjectClientRpc(_vendingMachineId, (int)playerInteractor.actualClientId);
         
@@ -282,9 +284,7 @@ public class VileVendingMachineServer : EnemyAI
         yield return new WaitForSeconds(2);
         
         netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.ArmAccept);
-        
-        // Reset values
-        _itemOnHand = null;
+        _isItemOnHand = false;
     }
     
     private static bool IsColliderAgainstWall(Collider collider)
@@ -295,16 +295,6 @@ public class VileVendingMachineServer : EnemyAI
     private static bool IsColliderColliding(Collider collider)
     {
         return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation);
-    }
-
-    private void HandleUpdateServerHeldItemCopy(string recievedVendingMachineId,
-        NetworkObjectReference itemObjectReference)
-    {
-        if (!IsServer) return;
-        if (recievedVendingMachineId != _vendingMachineId) return;
-        if (!itemObjectReference.TryGet(out NetworkObject itemNetworkObject)) return;
-
-        _itemOnHand = itemNetworkObject.GetComponent<GrabbableObject>();
     }
 
     private void SpawnCola()
@@ -379,6 +369,19 @@ public class VileVendingMachineServer : EnemyAI
             lineRenderer.SetPosition(i, new Vector3(x, y, z));
             angle += 360f / 50;
         }
+    }
+    
+    private EntranceTeleport GetRandomDoor()
+    {
+        EntranceTeleport[] doors = FindObjectsOfType<EntranceTeleport>().Where(t => t != null && t.exitPoint != null).ToArray();
+        // foreach (EntranceTeleport door in doors)
+        // {
+        //     DrawDebugHorizontalLineAtTransform(door.transform, Color.green);
+        //     DrawDebugHorizontalLineAtTransform(door.entrancePoint, Color.red);
+        //     DrawDebugLineAtTransformForward(door.transform, Color.blue);
+        // }
+        
+        return doors[UnityEngine.Random.Range(0, doors.Length - 1)];
     }
     
     private void LogDebug(string msg)

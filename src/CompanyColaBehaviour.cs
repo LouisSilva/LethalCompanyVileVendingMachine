@@ -1,7 +1,6 @@
 ﻿using System;
 using BepInEx.Logging;
 using UnityEngine;
-using UnityEngine.Serialization;
 using Logger = BepInEx.Logging.Logger;
 
 namespace LethalCompanyVileVendingMachine;
@@ -41,6 +40,7 @@ public class CompanyColaBehaviour : PhysicsProp
 
     public override void Update()
     {
+        if (isHeld && isPartOfVendingMachine) isPartOfVendingMachine = false;
         if (isPartOfVendingMachine) return;
         base.Update();
     }
@@ -51,10 +51,34 @@ public class CompanyColaBehaviour : PhysicsProp
         base.LateUpdate();
     }
 
+    public override void EquipItem()
+    {
+        base.EquipItem();
+        isPartOfVendingMachine = false;
+    }
+
     public override void GrabItem()
     {
+        base.GrabItem();
         isPartOfVendingMachine = false;
         if (IsOwner) Destroy(GetComponent<Rigidbody>());
+    }
+
+    public void UpdateScrapValue(int value)
+    {
+        ScanNodeProperties scanNode1 = GetComponent<ScanNodeProperties>();
+        if (scanNode1 != null)
+        {
+            scanNode1.scrapValue = value;
+            scanNode1.subText = $"Value: {value}";
+        }
+        
+        ScanNodeProperties scanNode2 = GetComponentInChildren<ScanNodeProperties>();
+        if (scanNode2 != null)
+        {
+            scanNode2.scrapValue = value;
+            scanNode2.subText = $"Value: {value}";
+        }
     }
 
     private void LogDebug(string msg)

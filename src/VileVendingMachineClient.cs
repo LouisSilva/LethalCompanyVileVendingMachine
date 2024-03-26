@@ -18,10 +18,9 @@ public class VileVendingMachineClient : MonoBehaviour
     [SerializeField] private AudioSource creatureVoiceSource;
     [SerializeField] private AudioSource creatureSfxSource;
 
-    [Header("Transforms and Colliders")] [Space(5f)]
+    [Header("Transforms")] [Space(5f)]
     [SerializeField] private Transform handBone;
-    [SerializeField] private BoxCollider itemHolder;
-    [SerializeField] private Transform colaPlaceholder;
+    [SerializeField] private Transform itemHolder;
 
     [Header("Controllers")] [Space(5f)] 
     [SerializeField] private VileVendingMachineNetcodeController netcodeController;
@@ -91,11 +90,11 @@ public class VileVendingMachineClient : MonoBehaviour
         GrabbableObject item = player.currentlyHeldObjectServer;
         if (item == null) item = player.currentlyHeldObject;
         if (item == null) item = player.currentlyGrabbingObject;
-        netcodeController.UpdateServerHeldItemCopyServerRpc(_vendingMachineId, item.GetComponent<NetworkObject>());
+        // netcodeController.UpdateServerHeldItemCopyServerRpc(_vendingMachineId, item.GetComponent<NetworkObject>());
 
         Vector3 placePosition = itemHolder.GetComponent<Transform>().position;
         placePosition.y += item.itemProperties.verticalOffset;
-        placePosition = itemHolder.GetComponent<Transform>().InverseTransformPoint(placePosition);
+        placePosition = itemHolder.InverseTransformPoint(placePosition);
         
         player.DiscardHeldObject(true, GetComponent<NetworkObject>(), placePosition, false);
         netcodeController.PlaceItemInHandServerRpc(_vendingMachineId, item.GetComponent<NetworkObject>(), placePosition);
@@ -108,17 +107,26 @@ public class VileVendingMachineClient : MonoBehaviour
         if (!networkObjectReference.TryGet(out NetworkObject networkObject)) return;
         GrabbableObject item = networkObject.GetComponent<GrabbableObject>();
         
-        item.transform.position = position;
-        item.parentObject = itemHolder.GetComponent<Transform>();
-        item.EnablePhysics(false);
-
-        item.transform.rotation = item.floorYRot == -1 ? 
-            Quaternion.Euler(item.itemProperties.restingRotation.x, item.transform.eulerAngles.y, item.itemProperties.restingRotation.z) : 
-            Quaternion.Euler(item.itemProperties.restingRotation.x, item.floorYRot + item.itemProperties.floorYOffset + 90f, item.itemProperties.restingRotation.z);
-        
+        item.isHeldByEnemy = true;
         item.grabbable = false;
         item.grabbableToEnemies = false;
-        _itemInHand = false;
+        _itemInHand = true;
+        
+        item.EnablePhysics(false);
+        item.transform.SetParent(itemHolder);
+        
+        item.transform.position = position;
+        
+        // This is correct but the rotation of the item holder just overrides it
+        item.transform.rotation = item.floorYRot == -1
+            ? Quaternion.Euler(
+                item.itemProperties.restingRotation.x, 
+                item.itemProperties.restingRotation.y,
+                item.itemProperties.restingRotation.z)
+            
+            : Quaternion.Euler(item.itemProperties.restingRotation.x,
+                item.floorYRot + item.itemProperties.floorYOffset + 90f, 
+                item.itemProperties.restingRotation.z);
     }
 
     private IEnumerator KillTargetPlayer()
@@ -154,11 +162,12 @@ public class VileVendingMachineClient : MonoBehaviour
 
     public void OnAnimationEventEnableColaPhysics()
     {
+        _itemInHand = false;
         _cola.transform.SetParent(null);
         Rigidbody colaRigidbody = _cola.GetComponent<Rigidbody>();
         colaRigidbody.isKinematic = false;
-        colaRigidbody.AddForce(transform.forward * 10, ForceMode.Impulse);
-        colaRigidbody.AddTorque(transform.right * 5f, ForceMode.Impulse);
+        colaRigidbody.AddForce(transform.forward * 5f, ForceMode.Impulse);
+        colaRigidbody.AddTorque(transform.right * 20f, ForceMode.Impulse);
     }
 
     public void OnAnimationEventSpawnCola()

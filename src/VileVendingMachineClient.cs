@@ -4,6 +4,7 @@ using BepInEx.Logging;
 using GameNetcodeStuff;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.VFX;
 using Logger = UnityEngine.Logger;
 
 namespace LethalCompanyVileVendingMachine;
@@ -26,6 +27,8 @@ public class VileVendingMachineClient : MonoBehaviour
     [SerializeField] private VileVendingMachineNetcodeController netcodeController;
     [SerializeField] private Animator animator;
     [SerializeField] private InteractTrigger triggerScript;
+    [SerializeField] private SkinnedMeshRenderer renderer;
+    [SerializeField] private VisualEffect materializeVfx;
     #pragma warning restore 0649
 
     public static readonly int ArmAccept = Animator.StringToHash("accept");
@@ -54,6 +57,8 @@ public class VileVendingMachineClient : MonoBehaviour
         netcodeController.OnPlaceItemInHand += HandlePlaceItemInHand;
         netcodeController.OnChangeTargetPlayer += HandleChangeTargetPlayer;
         netcodeController.OnUpdateColaNetworkObjectReference += HandleUpdateColaNetworkObjectReference;
+        netcodeController.OnSetMeshEnabled += HandleSetMeshEnabled;
+        netcodeController.OnPlayMaterializeVfx += HandlePlayMaterializeVfx;
     }
 
     private void OnDestroy()
@@ -66,6 +71,8 @@ public class VileVendingMachineClient : MonoBehaviour
         netcodeController.OnPlaceItemInHand -= HandlePlaceItemInHand;
         netcodeController.OnChangeTargetPlayer -= HandleChangeTargetPlayer;
         netcodeController.OnUpdateColaNetworkObjectReference -= HandleUpdateColaNetworkObjectReference;
+        netcodeController.OnSetMeshEnabled -= HandleSetMeshEnabled;
+        netcodeController.OnPlayMaterializeVfx -= HandlePlayMaterializeVfx;
     }
 
     private void Start()
@@ -215,6 +222,29 @@ public class VileVendingMachineClient : MonoBehaviour
     {
         if (!NetworkManager.Singleton.IsClient || !netcodeController.IsOwner) return;
         netcodeController.DespawnHeldItemServerRpc(_vendingMachineId);
+    }
+
+    private void HandlePlayMaterializeVfx(string recievedVendingMachineId, Vector3 finalPosition, Quaternion finalRotation)
+    {
+        if (_vendingMachineId != recievedVendingMachineId) return;
+        StartCoroutine(PlayMaterializeVfx(finalPosition, finalRotation));
+    }
+
+    private IEnumerator PlayMaterializeVfx(Vector3 finalPosition, Quaternion finalRotation)
+    {
+        renderer.enabled = false;
+        transform.position = finalPosition;
+        transform.rotation = finalRotation;
+        
+        materializeVfx.SendEvent("PlayMaterialize");
+        yield return new WaitForSeconds(3);
+        renderer.enabled = true;
+    }
+
+    private void HandleSetMeshEnabled(string recievedVendingMachineId, bool meshEnabled)
+    {
+        if (_vendingMachineId != recievedVendingMachineId) return;
+        renderer.enabled = meshEnabled;
     }
 
     private void HandleUpdateColaNetworkObjectReference(string recievedVendingMachineId,

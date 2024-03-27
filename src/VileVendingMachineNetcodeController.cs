@@ -1,5 +1,6 @@
 ﻿using System;
 using BepInEx.Logging;
+using MonoMod.Cil;
 using Unity.Netcode;
 using UnityEngine;
 using Logger = BepInEx.Logging.Logger;
@@ -21,12 +22,26 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     public event Action<string, int> OnChangeTargetPlayer;
     public event Action<string> OnSpawnCola;
     public event Action<string, NetworkObjectReference> OnUpdateColaNetworkObjectReference;
+    public event Action<string, bool> OnSetMeshEnabled;
+    public event Action<string, Vector3, Quaternion> OnPlayMaterializeVfx;
     
 
     private void Start()
     {
         _mls = Logger.CreateLogSource(
             $"{VileVendingMachinePlugin.ModGuid} | Volatile Vending Machine Netcode Controller");
+    }
+
+    [ClientRpc]
+    public void PlayMaterializeVfxClientRpc(string recievedVendingMachineId, Vector3 finalPosition, Quaternion finalRotation)
+    {
+        OnPlayMaterializeVfx?.Invoke(recievedVendingMachineId, finalPosition, finalRotation);
+    }
+
+    [ClientRpc]
+    public void SetMeshEnabledClientRpc(string recievedVendingMachineId, bool meshEnabled)
+    {
+        OnSetMeshEnabled?.Invoke(recievedVendingMachineId, meshEnabled);
     }
 
     [ServerRpc(RequireOwnership = false)]

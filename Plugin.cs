@@ -32,7 +32,7 @@ namespace LethalCompanyVileVendingMachine
         
         public static VolatileVendingMachineConfig VolatileVendingMachineConfig { get; internal set; }
 
-        private static EnemyType _vileVendingMachineEnemyType;
+        private static EnemyType _volatileVendingMachineEnemyType;
 
         public static Item CompanyColaItem;
         
@@ -52,29 +52,31 @@ namespace LethalCompanyVileVendingMachine
             _harmony.PatchAll();
             VolatileVendingMachineConfig = new VolatileVendingMachineConfig(Config);
 
-            SetupVileVendingMachine();
+            SetupVolatileVendingMachine();
             SetupCompanyCola();
             
             _harmony.PatchAll(typeof(VileVendingMachinePlugin));
             _mls.LogInfo($"Plugin {ModName} is loaded!");
         }
 
-        private void SetupVileVendingMachine()
+        private void SetupVolatileVendingMachine()
         {
-            _vileVendingMachineEnemyType = Assets.MainAssetBundle.LoadAsset<EnemyType>("VileVendingMachine");
+            _volatileVendingMachineEnemyType = Assets.MainAssetBundle.LoadAsset<EnemyType>("VolatileVendingMachine");
+            _volatileVendingMachineEnemyType.PowerLevel = VolatileVendingMachineConfig.Instance.PowerLevel.Value;
+            _volatileVendingMachineEnemyType.MaxCount = VolatileVendingMachineConfig.Instance.MaxAmount.Value;
+            
+            TerminalNode volatileVendingMachineTerminalNode = Assets.MainAssetBundle.LoadAsset<TerminalNode>("VolatileVendingMachineTN");
+            TerminalKeyword volatileVendingMachineTerminalKeyword = Assets.MainAssetBundle.LoadAsset<TerminalKeyword>("VolatileVendingMachineTK");
 
-            TerminalNode vileVendingMachineTerminalNode = Assets.MainAssetBundle.LoadAsset<TerminalNode>("VileVendingMachineTN");
-            TerminalKeyword vileVendingMachineTerminalKeyword = Assets.MainAssetBundle.LoadAsset<TerminalKeyword>("VileVendingMachineTK");
-
-            NetworkPrefabs.RegisterNetworkPrefab(_vileVendingMachineEnemyType.enemyPrefab);
-            Utilities.FixMixerGroups(_vileVendingMachineEnemyType.enemyPrefab);
+            NetworkPrefabs.RegisterNetworkPrefab(_volatileVendingMachineEnemyType.enemyPrefab);
+            Utilities.FixMixerGroups(_volatileVendingMachineEnemyType.enemyPrefab);
             Enemies.RegisterEnemy(
-                _vileVendingMachineEnemyType,
-                999,
-                Levels.LevelTypes.All,
+                _volatileVendingMachineEnemyType,
+                Mathf.Clamp(VolatileVendingMachineConfig.Instance.SpawnRate.Value, 0, 999),
+                VolatileVendingMachineConfig.Instance.SpawnLevelTypes.Value,
                 Enemies.SpawnType.Default,
-                vileVendingMachineTerminalNode,
-                vileVendingMachineTerminalKeyword
+                volatileVendingMachineTerminalNode,
+                volatileVendingMachineTerminalKeyword
                 );
         }
 
@@ -113,15 +115,50 @@ namespace LethalCompanyVileVendingMachine
     public class VolatileVendingMachineConfig : SyncedInstance<VolatileVendingMachineConfig>
     {
         // Spawn values
+        public readonly ConfigEntry<int> SpawnRate;
+        public readonly ConfigEntry<int> MaxAmount;
+        public readonly ConfigEntry<int> PowerLevel;
+        public readonly ConfigEntry<Levels.LevelTypes> SpawnLevelTypes;
         public readonly ConfigEntry<bool> CanSpawnAtMainDoorMaster;
         public readonly ConfigEntry<bool> CanSpawnAtFireExitMaster;
         public readonly ConfigEntry<bool> CanSpawnOutsideMaster;
         public readonly ConfigEntry<bool> CanSpawnInsideMaster;
-        public readonly ConfigEntry<bool> CanHaveLeftAndRightPerDoor;
+        public readonly ConfigEntry<bool> AlwaysSpawnOutsideMainEntrance;
+
+        public readonly ConfigEntry<int> ColaMaxValue;
+        public readonly ConfigEntry<int> ColaMinValue;
 
         public VolatileVendingMachineConfig(ConfigFile cfg)
         {
             InitInstance(this);
+            
+            SpawnRate = cfg.Bind(
+                "Spawn Values",
+                "Spawn Rate",
+                20,
+                "The spawn rate of the vending machine"
+            );
+            
+            MaxAmount = cfg.Bind(
+                "Spawn Values",
+                "Max Amount",
+                1,
+                "The max amount of vending machines"
+            );
+            
+            PowerLevel = cfg.Bind(
+                "Spawn Values",
+                "Power Level",
+                1,
+                "The power level of the vending machine"
+            );
+            
+            SpawnLevelTypes = cfg.Bind(
+                "Spawn Values",
+                "Spawn Level",
+                Levels.LevelTypes.All,
+                "The LevelTypes that the vending machine spawns in"
+            );
 
             CanSpawnAtMainDoorMaster = cfg.Bind(
                 "Spawn Values",
@@ -151,11 +188,25 @@ namespace LethalCompanyVileVendingMachine
                 "Whether the vending machine can spawn inside the dungeon"
             );
             
-            CanHaveLeftAndRightPerDoor = cfg.Bind(
+            AlwaysSpawnOutsideMainEntrance = cfg.Bind(
                 "Spawn Values",
-                "Can Spawn at the Left and Right",
+                "Always Spawn At Main Entrance First",
                 false,
-                "Whether there could be a vending machine to the left of the door, and another to the right of the door"
+                "Whether a vending machine should always try to spawn outside the main entrance first, before considering fire exits or spawning inside the dungeon"
+            );
+            
+            ColaMinValue = cfg.Bind(
+                "Spawn Values",
+                "Company Cola Minimum Value",
+                60,
+                "The minimum possible value of a company cola"
+            );
+            
+            ColaMaxValue = cfg.Bind(
+                "Spawn Values",
+                "Company Cola Maximum Value",
+                90,
+                "The maximum possible value of a company cola"
             );
         }
         

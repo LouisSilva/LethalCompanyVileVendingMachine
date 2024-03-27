@@ -17,8 +17,7 @@ public class VileVendingMachineServer : EnemyAI
 {
     private ManualLogSource _mls;
     private string _vendingMachineId;
-
-    [SerializeField] private InteractTrigger triggerScript;
+    
     private bool _isItemOnHand = false;
 
     [Header("AI")]
@@ -37,6 +36,7 @@ public class VileVendingMachineServer : EnemyAI
     
     [Header("Controllers")]
     [Space(5f)]
+    [SerializeField] private InteractTrigger triggerScript;
     [SerializeField] private VileVendingMachineNetcodeController netcodeController;
 #pragma warning restore 0649
 
@@ -61,6 +61,8 @@ public class VileVendingMachineServer : EnemyAI
         _vendingMachineId = Guid.NewGuid().ToString();
         _mls = Logger.CreateLogSource(
             $"{VileVendingMachinePlugin.ModGuid} | Volatile Vending Machine Server {_vendingMachineId}");
+        
+        UnityEngine.Random.InitState(StartOfRound.Instance.randomMapSeed + _vendingMachineId.GetHashCode());
 
         netcodeController.UpdateVendingMachineIdClientRpc(_vendingMachineId);
         netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
@@ -74,6 +76,9 @@ public class VileVendingMachineServer : EnemyAI
 
         agent.updateRotation = false;
         agent.updatePosition = false;
+        
+        netcodeController.SetMeshEnabledClientRpc(_vendingMachineId, false);
+        EnableEnemyMesh(false);
 
         try
         {
@@ -108,28 +113,50 @@ public class VileVendingMachineServer : EnemyAI
         while (VendingMachineRegistry.IsPlacementInProgress) yield return new WaitForSeconds(1);
         
         VendingMachineRegistry.IsPlacementInProgress = true;
+        bool isFireExitAllowedOutside = IsFireExitAllowedOutside();
+        bool isFireExitAllowedInside = IsFireExitAllowedInside();
+        
         EntranceTeleport[] doors = GetDoorTeleports();
+        
+        // Shuffle the doors
+        if (!VolatileVendingMachineConfig.Instance.AlwaysSpawnOutsideMainEntrance.Value)
+            doors = doors.OrderBy(x => UnityEngine.Random.Range(int.MinValue, int.MaxValue)).ToArray();
+        
+        // Loops over all the doors on the outside, and inside the dungeon. The i values correspond to the EntranceOrExit enum
         for (int i = 0; i < 2; i++)
         {
+            // Checks if a vending machine can spawn outside
             if (!VolatileVendingMachineConfig.Instance.CanSpawnOutsideMaster.Value && i == (int)EntranceOrExit.Entrance)
                 continue;
 
+            // Checks if a vending machine can spawn inside the dungeon
             if (!VolatileVendingMachineConfig.Instance.CanSpawnInsideMaster.Value && i == (int)EntranceOrExit.Exit)
                 continue;
             
             foreach (EntranceTeleport door in doors)
             {
+                // Checks if a vending machine can spawn at the main door, inside or outside
                 if (!VolatileVendingMachineConfig.Instance.CanSpawnAtMainDoorMaster.Value && door.entranceId == 0)
                     continue;
 
+                // Checks if a vending machine can spawn at a fire exit, inside or outside
                 if (!VolatileVendingMachineConfig.Instance.CanSpawnAtFireExitMaster.Value && door.entranceId != 0)
                     continue;
+
+                // Checks if a vending machine is blacklisted from spawning outside a fire exit on a certain map (to save time)
+                if (door.entranceId != 0 && (int)EntranceOrExit.Entrance == i && !isFireExitAllowedOutside)
+                    continue;
+                
+                // Checks if a vending machine is blacklisted from spawning inside a particular dungeon flow e.g. facility because there is no space 99% of the time
+                if (door.entranceId != 0 && (int)EntranceOrExit.Exit == i && !isFireExitAllowedInside)
+                    continue;
+                
 
                 if (VendingMachineRegistry.IsDoorOccupied(door, i))
                 {
                     continue;
                 }
-
+                
                 Vector3 doorPosition = default;
                 Tuple<Transform, int>[] doorTransforms = GetDoorTransforms(door.entranceId);
                 foreach (Tuple<Transform, int> doorTransformTuple in doorTransforms)
@@ -145,7 +172,6 @@ public class VileVendingMachineServer : EnemyAI
                 
                 Vector3 vectorA = teleportPosition - doorPosition;
                 Vector3 vectorB = Vector3.Cross(vectorA, Vector3.up).normalized;
-                DrawDebugCircleAtPosition(doorPosition);
 
                 vectorA.y = 0;
                 transform.position = doorPosition + vectorA.normalized * -1f;
@@ -185,8 +211,10 @@ public class VileVendingMachineServer : EnemyAI
 
                 VendingMachineRegistry.AddVendingMachine(_vendingMachineId, door, leftOrRight, i);
                 VendingMachineRegistry.IsPlacementInProgress = false;
+                netcodeController.PlayMaterializeVfxClientRpc(_vendingMachineId, transform.position, transform.rotation);
                 if (callback == null) yield break;
-                yield return new WaitForSeconds(0.5f);
+                yield return new WaitForSeconds(5f);
+                EnableEnemyMesh(true);
                 callback.Invoke();
                 yield break;
             }
@@ -261,7 +289,10 @@ public class VileVendingMachineServer : EnemyAI
         CompanyColaBehaviour colaBehaviour = colaObject.GetComponent<CompanyColaBehaviour>();
         if (colaBehaviour == null) _mls.LogError("colaBehaviour is null");
         colaBehaviour.isPartOfVendingMachine = true;
-        int colaScrapValue = UnityEngine.Random.Range(60, 91);
+        colaBehaviour.isPhysicsEnabled = true;
+        int colaScrapValue = UnityEngine.Random.Range(
+            VolatileVendingMachineConfig.Instance.ColaMinValue.Value, 
+            VolatileVendingMachineConfig.Instance.ColaMaxValue.Value + 1);
 
         // ScanNodeProperties scanNode = colaObject.GetComponent<ScanNodeProperties>();
         // if (scanNode == null)
@@ -367,6 +398,27 @@ public class VileVendingMachineServer : EnemyAI
     private void SpawnCola()
     {
         HandleSpawnCola(_vendingMachineId);
+    }
+
+    private static bool IsFireExitAllowedOutside()
+    {
+        string[] noFireExitDoors =
+        [
+            "Level1Experimentation",
+        ];
+
+        return noFireExitDoors.All(mapName => StartOfRound.Instance.currentLevel.sceneName != mapName);
+    }
+
+    private static bool IsFireExitAllowedInside()
+    {
+        string[] noFireExitDoors =
+        [
+            "Level1Flow",
+        ];
+
+        return noFireExitDoors.All(dungeonName =>
+            RoundManager.Instance.dungeonGenerator.Generator.DungeonFlow.name != dungeonName);
     }
     
     private void DrawDebugHorizontalLineAtTransform(Transform transform, Color colour = new())

@@ -11,10 +11,17 @@ public class CompanyColaBehaviour : PhysicsProp
 
     private string _colaId;
 
+    private bool _isFalling;
+    private float _lastPositionY;
+    private float _positionStableCounter;
+    [SerializeField] private float stabilityThreshold = 0.005f;
+    [SerializeField] private float requiredStableTime = 0.2f;
+
     public AudioSource colaAudioSource;
     public AudioClip[] colaAudioClips;
 
     public bool isPartOfVendingMachine;
+    public bool isPhysicsEnabled;
 
     public override void Start()
     {
@@ -27,6 +34,7 @@ public class CompanyColaBehaviour : PhysicsProp
         hasHitGround = true;
         reachedFloorTarget = true;
         targetFloorPosition = transform.localPosition;
+        _lastPositionY = transform.position.y;
         
         if(RoundManager.Instance.mapPropsContainer != null)
             radarIcon = Instantiate(StartOfRound.Instance.itemRadarIconPrefab, RoundManager.Instance.mapPropsContainer.transform).transform;
@@ -51,16 +59,47 @@ public class CompanyColaBehaviour : PhysicsProp
         base.LateUpdate();
     }
 
+    private void FixedUpdate()
+    {
+        if (!IsOwner) return;
+        if (!isPhysicsEnabled) return;
+        
+        float yPos = transform.position.y;
+        if (yPos < _lastPositionY)
+        {
+            _isFalling = true;
+            _positionStableCounter = 0.0f;
+        }
+        else if (Mathf.Abs(yPos - _lastPositionY) <= stabilityThreshold)
+        {
+            _positionStableCounter += Time.fixedDeltaTime;
+        }
+
+        _lastPositionY = yPos;
+    }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        if (!IsOwner) return;
+        if (collision.collider.tag is "Player" or "PhysicsProp" or "PlayerRagdoll" or "Enemy") return;
+        if (!_isFalling || !(_positionStableCounter >= requiredStableTime)) return;
+        
+        PlayDropSFX();
+        _isFalling = false;
+    }
+
     public override void EquipItem()
     {
         base.EquipItem();
         isPartOfVendingMachine = false;
+        isPhysicsEnabled = false;
     }
 
     public override void GrabItem()
     {
         base.GrabItem();
         isPartOfVendingMachine = false;
+        isPhysicsEnabled = false;
         if (IsOwner) Destroy(GetComponent<Rigidbody>());
     }
 
@@ -80,6 +119,8 @@ public class CompanyColaBehaviour : PhysicsProp
             scanNode2.scrapValue = value;
             scanNode2.subText = $"Value: {value}";
         }
+        
+        SetScrapValue(value);
     }
 
     private void LogDebug(string msg)

@@ -193,8 +193,7 @@ public class VileVendingMachineServer : EnemyAI
                 transform.rotation = Quaternion.LookRotation(vectorA);
 
                 int counter = 0;
-                LogDebug($"backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
-                while (!IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask) || IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask))
+                while (!IsColliderAgainstWall(backCollider) || IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask) || IsColliderColliding(mainCollider, StartOfRound.Instance.collidersAndRoomMask))
                 {
                     LogDebug($"counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
                     if (counter >= 500)
@@ -205,7 +204,7 @@ public class VileVendingMachineServer : EnemyAI
                         yield break;
                     }
                     
-                    transform.position += vectorA.normalized * 0.01f;
+                    transform.position += vectorA.normalized * 0.02f;
                     counter++;
                     yield return new WaitForSeconds(placementIntervalTimer);
                 }
@@ -219,7 +218,7 @@ public class VileVendingMachineServer : EnemyAI
                         hit.point.y + floorCollider.transform.localPosition.y, transform.position.z);
                 }
 
-                // Move vending machien to the left or right
+                // Move vending machine to the left or right
                 float leftDistance = GetDistanceToObjectInDirection(-transform.right, 30f);
                 float rightDistance = GetDistanceToObjectInDirection(transform.right, 30f);
 
@@ -229,42 +228,6 @@ public class VileVendingMachineServer : EnemyAI
                 int leftOrRight = leftDistance > rightDistance ? (int)LeftOrRight.Left : (int)LeftOrRight.Right;
                 distanceToDoor = Mathf.Clamp(distanceToDoor, 0.5f, 3f);
                 transform.position += vectorB * ((leftOrRight == (int)LeftOrRight.Left ? -1 : 1) * distanceToDoor);
-
-                // Check if its back is still touching the wall, if not then move back a bit
-                counter = 0;
-                while (!IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask))
-                {
-                    LogDebug($"2WOOW counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
-                    if (counter >= 500)
-                    {
-                        LogDebug("Vending machine could not be placed");
-                        VendingMachineRegistry.IsPlacementInProgress = false;
-                        KillEnemyClientRpc(true);
-                        yield break;
-                    }
-                    
-                    transform.position += vectorA.normalized * -0.01f;
-                    counter++;
-                    yield return new WaitForSeconds(placementIntervalTimer);
-                }
-                
-                // Check if its front is still not touching anything, if so then move forward a bit
-                counter = 0;
-                while (IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask))
-                {
-                    LogDebug($"3WOZO counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
-                    if (counter >= 500)
-                    {
-                        LogDebug("Vending machine could not be placed");
-                        VendingMachineRegistry.IsPlacementInProgress = false;
-                        KillEnemyClientRpc(true);
-                        yield break;
-                    }
-                    
-                    transform.position += vectorA.normalized * 0.01f;
-                    counter++;
-                    yield return new WaitForSeconds(placementIntervalTimer);
-                }
                 
                 Destroy(frontCollider.gameObject);
                 Destroy(backCollider.gameObject);

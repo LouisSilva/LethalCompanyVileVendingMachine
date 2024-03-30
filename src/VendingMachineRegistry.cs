@@ -7,8 +7,8 @@ namespace LethalCompanyVileVendingMachine;
 
 public enum LeftOrRight
 {
-    Left = 0,
-    Right = 1
+    Left = 1,
+    Right = 2
 }
 
 public enum EntranceOrExit

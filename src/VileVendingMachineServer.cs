@@ -24,10 +24,26 @@ public class VileVendingMachineServer : EnemyAI
     [Space(5f)]
     [SerializeField] private float annoyanceLevel = 0f;
     [SerializeField] private float annoyanceThreshold = 3f;
+    [SerializeField] private float placementIntervalTimer = 0.1f;
+
+    private readonly LayerMask _placementMask = ~(
+        1 << 2
+        | 1 << 3
+        | 1 << 5
+        | 1 << 7
+        | 1 << 9 
+        | 1 << 13
+        | 1 << 14
+        | 1 << 18 
+        | 1 << 19 
+        | 1 << 22
+        | 1 << 23
+        );
 
     [Header("Colliders and Transforms")]
     [Space(5f)]
 #pragma warning disable 0649
+    [SerializeField] private BoxCollider mainCollider;
     [SerializeField] private BoxCollider frontCollider;
     [SerializeField] private BoxCollider backCollider;
     [SerializeField] private BoxCollider floorCollider;
@@ -77,8 +93,8 @@ public class VileVendingMachineServer : EnemyAI
         agent.updateRotation = false;
         agent.updatePosition = false;
         
-        netcodeController.SetMeshEnabledClientRpc(_vendingMachineId, false);
-        EnableEnemyMesh(false);
+        // netcodeController.SetMeshEnabledClientRpc(_vendingMachineId, false);
+        // EnableEnemyMesh(false);
 
         try
         {
@@ -150,7 +166,6 @@ public class VileVendingMachineServer : EnemyAI
                 // Checks if a vending machine is blacklisted from spawning inside a particular dungeon flow e.g. facility because there is no space 99% of the time
                 if (door.entranceId != 0 && (int)EntranceOrExit.Exit == i && !isFireExitAllowedInside)
                     continue;
-                
 
                 if (VendingMachineRegistry.IsDoorOccupied(door, i))
                 {
@@ -174,13 +189,25 @@ public class VileVendingMachineServer : EnemyAI
                 Vector3 vectorB = Vector3.Cross(vectorA, Vector3.up).normalized;
 
                 vectorA.y = 0;
-                transform.position = doorPosition + vectorA.normalized * -1f;
+                transform.position = doorPosition + vectorA.normalized * -0.5f;
                 transform.rotation = Quaternion.LookRotation(vectorA);
 
-                while (!IsColliderAgainstWall(backCollider) && IsColliderColliding(frontCollider))
+                int counter = 0;
+                LogDebug($"backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
+                while (!IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask) || IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask))
                 {
-                    transform.position += vectorA.normalized * 0.1f;
-                    yield return new WaitForSeconds(0.01f);
+                    LogDebug($"counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
+                    if (counter >= 500)
+                    {
+                        LogDebug("Vending machine could not be placed");
+                        VendingMachineRegistry.IsPlacementInProgress = false;
+                        KillEnemyClientRpc(true);
+                        yield break;
+                    }
+                    
+                    transform.position += vectorA.normalized * 0.01f;
+                    counter++;
+                    yield return new WaitForSeconds(placementIntervalTimer);
                 }
 
                 // Move vending machine to the floor
@@ -192,16 +219,53 @@ public class VileVendingMachineServer : EnemyAI
                         hit.point.y + floorCollider.transform.localPosition.y, transform.position.z);
                 }
 
-                float leftDistance = GetDistanceToObjectInDirection(-transform.right, 50f);
-                float rightDistance = GetDistanceToObjectInDirection(transform.right, 50f);
+                // Move vending machien to the left or right
+                float leftDistance = GetDistanceToObjectInDirection(-transform.right, 30f);
+                float rightDistance = GetDistanceToObjectInDirection(transform.right, 30f);
 
                 float distanceToDoor = leftDistance > rightDistance ? leftDistance : rightDistance;
                 if (distanceToDoor == 0) continue;
 
                 int leftOrRight = leftDistance > rightDistance ? (int)LeftOrRight.Left : (int)LeftOrRight.Right;
-                distanceToDoor = Mathf.Clamp(distanceToDoor, 1f, 3f);
-                transform.position += vectorB * distanceToDoor;
+                distanceToDoor = Mathf.Clamp(distanceToDoor, 0.5f, 3f);
+                transform.position += vectorB * ((leftOrRight == (int)LeftOrRight.Left ? -1 : 1) * distanceToDoor);
 
+                // Check if its back is still touching the wall, if not then move back a bit
+                counter = 0;
+                while (!IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask))
+                {
+                    LogDebug($"2WOOW counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
+                    if (counter >= 500)
+                    {
+                        LogDebug("Vending machine could not be placed");
+                        VendingMachineRegistry.IsPlacementInProgress = false;
+                        KillEnemyClientRpc(true);
+                        yield break;
+                    }
+                    
+                    transform.position += vectorA.normalized * -0.01f;
+                    counter++;
+                    yield return new WaitForSeconds(placementIntervalTimer);
+                }
+                
+                // Check if its front is still not touching anything, if so then move forward a bit
+                counter = 0;
+                while (IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask))
+                {
+                    LogDebug($"3WOZO counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
+                    if (counter >= 500)
+                    {
+                        LogDebug("Vending machine could not be placed");
+                        VendingMachineRegistry.IsPlacementInProgress = false;
+                        KillEnemyClientRpc(true);
+                        yield break;
+                    }
+                    
+                    transform.position += vectorA.normalized * 0.01f;
+                    counter++;
+                    yield return new WaitForSeconds(placementIntervalTimer);
+                }
+                
                 Destroy(frontCollider.gameObject);
                 Destroy(backCollider.gameObject);
                 Destroy(floorCollider.gameObject);
@@ -390,9 +454,25 @@ public class VileVendingMachineServer : EnemyAI
         return Physics.Raycast(collider.bounds.center, -collider.transform.forward, out RaycastHit hit, collider.bounds.size.z);
     }
     
-    private static bool IsColliderColliding(Collider collider)
+    private bool IsColliderColliding(Collider collider)
     {
-        return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation);
+        Collider[] collidingObjects = Physics.OverlapBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation);
+        foreach (Collider obj in collidingObjects) {
+            LogDebug("Colliding with: " + obj.name);
+        }
+        return collidingObjects.Length > 0;
+        //return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation);
+    }
+    
+    private bool IsColliderColliding(Collider collider, LayerMask layerMask)
+    {
+        Collider[] collidingObjects = Physics.OverlapBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation, layerMask);
+        foreach (Collider obj in collidingObjects) {
+            LogDebug("Colliding with: " + obj.name);
+            DrawDebugCircleAtPosition(obj.bounds.center);
+        }
+        return collidingObjects.Length > 0;
+        //return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation);
     }
 
     private void SpawnCola()
@@ -405,6 +485,7 @@ public class VileVendingMachineServer : EnemyAI
         string[] noFireExitDoors =
         [
             "Level1Experimentation",
+            "Level8Titan",
         ];
 
         return noFireExitDoors.All(mapName => StartOfRound.Instance.currentLevel.sceneName != mapName);
@@ -468,7 +549,7 @@ public class VileVendingMachineServer : EnemyAI
     private void DrawDebugCircleAtPosition(Vector3 position)
     {
         float angle = 20f;
-        const float circleRadius = 4f;
+        const float circleRadius = 2f;
         GameObject circleObj = new("Circle");
         circleObj.transform.position = position;
 

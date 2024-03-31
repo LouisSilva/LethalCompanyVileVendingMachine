@@ -22,9 +22,11 @@ public class VileVendingMachineServer : EnemyAI
 
     [Header("AI")]
     [Space(5f)]
-    [SerializeField] private float annoyanceLevel = 0f;
-    [SerializeField] private float annoyanceThreshold = 3f;
-    [SerializeField] private float placementIntervalTimer = 0.1f;
+    [SerializeField] private float placementIntervalTimer = 0.01f;
+    [SerializeField] private float initialKillProbability = 0.01f;
+    [SerializeField] private float killProbabilityGrowthFactor = 4.64f;
+    [SerializeField] private float killProbabilityReductionFactor = 0.25f;
+    private float _currentKillProbability = 0.01f;
 
     private readonly LayerMask _placementMask = ~(
         1 << 2
@@ -56,11 +58,6 @@ public class VileVendingMachineServer : EnemyAI
     [SerializeField] private VileVendingMachineNetcodeController netcodeController;
 #pragma warning restore 0649
 
-    private enum States
-    {
-        Idle,
-    }
-
     public override void OnDestroy()
     {
         netcodeController.OnDespawnHeldItem -= HandleDespawnHeldItem;
@@ -84,6 +81,10 @@ public class VileVendingMachineServer : EnemyAI
         netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
         netcodeController.OnSpawnCola += HandleSpawnCola;
 
+        initialKillProbability = VolatileVendingMachineConfig.Instance.InitialKillProbability.Value;
+        killProbabilityGrowthFactor = VolatileVendingMachineConfig.Instance.KillProbabilityGrowthFactor.Value;
+        killProbabilityReductionFactor = VolatileVendingMachineConfig.Instance.KillProbabilityReductionFactor.Value;
+
         triggerScript = GetComponentInChildren<InteractTrigger>();
         triggerScript.onInteract.AddListener(InteractVendingMachine);
         triggerScript.tag = nameof(InteractTrigger);
@@ -93,8 +94,8 @@ public class VileVendingMachineServer : EnemyAI
         agent.updateRotation = false;
         agent.updatePosition = false;
         
-        // netcodeController.SetMeshEnabledClientRpc(_vendingMachineId, false);
-        // EnableEnemyMesh(false);
+        netcodeController.SetMeshEnabledClientRpc(_vendingMachineId, false);
+        EnableEnemyMesh(false);
 
         try
         {
@@ -173,7 +174,7 @@ public class VileVendingMachineServer : EnemyAI
                 }
                 
                 Vector3 doorPosition = default;
-                Tuple<Transform, int>[] doorTransforms = GetDoorTransforms(door.entranceId);
+                IEnumerable<Tuple<Transform, int>> doorTransforms = GetDoorTransforms(door.entranceId);
                 foreach (Tuple<Transform, int> doorTransformTuple in doorTransforms)
                 {
                     if (doorTransformTuple.Item2 != i) continue;
@@ -196,11 +197,9 @@ public class VileVendingMachineServer : EnemyAI
                 while (!IsColliderAgainstWall(backCollider) || IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask) || IsColliderColliding(mainCollider, StartOfRound.Instance.collidersAndRoomMask))
                 {
                     LogDebug($"counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
-                    if (counter >= 500)
+                    if (counter >= 300)
                     {
-                        LogDebug("Vending machine could not be placed");
-                        VendingMachineRegistry.IsPlacementInProgress = false;
-                        KillEnemyClientRpc(true);
+                        VendingMachinePlacementFail();
                         yield break;
                     }
                     
@@ -212,7 +211,7 @@ public class VileVendingMachineServer : EnemyAI
                 // Move vending machine to the floor
                 Vector3 floorRayStart = transform.position + Vector3.up * 0.5f;
                 if (Physics.Raycast(floorRayStart, -Vector3.up, out RaycastHit hit, 8f,
-                        StartOfRound.Instance.collidersAndRoomMaskAndDefault))
+                        StartOfRound.Instance.collidersAndRoomMask))
                 {
                     transform.position = new Vector3(transform.position.x,
                         hit.point.y + floorCollider.transform.localPosition.y, transform.position.z);
@@ -223,10 +222,10 @@ public class VileVendingMachineServer : EnemyAI
                 float rightDistance = GetDistanceToObjectInDirection(transform.right, 30f);
 
                 float distanceToDoor = leftDistance > rightDistance ? leftDistance : rightDistance;
-                if (distanceToDoor == 0) continue;
+                if (distanceToDoor < 3.1f) continue;
 
                 int leftOrRight = leftDistance > rightDistance ? (int)LeftOrRight.Left : (int)LeftOrRight.Right;
-                distanceToDoor = Mathf.Clamp(distanceToDoor, 0.5f, 3f);
+                distanceToDoor = 3f;
                 transform.position += vectorB * ((leftOrRight == (int)LeftOrRight.Left ? -1 : 1) * distanceToDoor);
                 
                 Destroy(frontCollider.gameObject);
@@ -247,17 +246,15 @@ public class VileVendingMachineServer : EnemyAI
             }
         }
 
-        LogDebug("Vending machine could not be placed");
-        VendingMachineRegistry.IsPlacementInProgress = false;
-        KillEnemyClientRpc(true);
+        VendingMachinePlacementFail();
     }
 
     private float GetDistanceToObjectInDirection(Vector3 direction, float maxDistance = 50f)
     {
         float distance = 0f;
-        if (Physics.Raycast(transform.position, direction, out RaycastHit hit3, maxDistance, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
+        if (Physics.Raycast(transform.position, direction, out RaycastHit hit, maxDistance, StartOfRound.Instance.collidersAndRoomMask))
         {
-            distance = hit3.distance;
+            distance = hit.distance;
         }
         else
         {
@@ -268,12 +265,12 @@ public class VileVendingMachineServer : EnemyAI
         return distance;
     }
     
-    private EntranceTeleport[] GetDoorTeleports()
+    private static EntranceTeleport[] GetDoorTeleports()
     {
         return FindObjectsOfType<EntranceTeleport>().Where(t => t != null && t.exitPoint != null && t.isEntranceToBuilding).ToArray();
     }
 
-    private Tuple<Transform, int>[] GetDoorTransforms(int entranceId)
+    private static IEnumerable<Tuple<Transform, int>> GetDoorTransforms(int entranceId)
     {
         EntranceTeleport[] allTeleports = FindObjectsOfType<EntranceTeleport>().ToArray();
         List<EntranceTeleport> matchedTeleports = allTeleports.Where(t => t.entranceId == entranceId).ToList();
@@ -320,20 +317,6 @@ public class VileVendingMachineServer : EnemyAI
         int colaScrapValue = UnityEngine.Random.Range(
             VolatileVendingMachineConfig.Instance.ColaMinValue.Value, 
             VolatileVendingMachineConfig.Instance.ColaMaxValue.Value + 1);
-
-        // ScanNodeProperties scanNode = colaObject.GetComponent<ScanNodeProperties>();
-        // if (scanNode == null)
-        // {
-        //     scanNode = colaObject.AddComponent<ScanNodeProperties>();
-        //     scanNode.scrapValue = colaScrapValue;
-        //     scanNode.headerText = "Company Cola";
-        //     scanNode.subText = $"Value: {colaScrapValue}";
-        //     scanNode.maxRange = 13;
-        //     scanNode.minRange = 1;
-        //     scanNode.requiresLineOfSight = true;
-        //     scanNode.creatureScanID = -1;
-        //     scanNode.nodeType = 2;
-        // }
         
         colaObject.GetComponent<GrabbableObject>().fallTime = 1f;
         colaObject.GetComponent<GrabbableObject>().SetScrapValue(colaScrapValue);
@@ -375,7 +358,7 @@ public class VileVendingMachineServer : EnemyAI
     {
         if (_isItemOnHand || GameNetworkManager.Instance == null) return;
 
-        _isItemOnHand = false;
+        _isItemOnHand = true;
         netcodeController.ChangeTargetPlayerClientRpc(_vendingMachineId, (int)playerInteractor.actualClientId);
         netcodeController.PlayerDiscardHeldObjectClientRpc(_vendingMachineId, (int)playerInteractor.actualClientId);
         
@@ -386,21 +369,22 @@ public class VileVendingMachineServer : EnemyAI
     {
         yield return new WaitForSeconds(0.1f);
         netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.ArmRetract);
-        
+        int heldItemValue = itemHolder.GetComponentInChildren<ScanNodeProperties>().scrapValue;
         yield return new WaitForSeconds(2.5f);
-        if (annoyanceLevel >= annoyanceThreshold) // kill player
+        
+        _currentKillProbability = heldItemValue > 90 ? 
+            Mathf.Max(initialKillProbability, _currentKillProbability * killProbabilityReductionFactor) : 
+            Mathf.Min(_currentKillProbability * killProbabilityGrowthFactor, 1f);
+        
+        if (UnityEngine.Random.value < _currentKillProbability) // kill player
         {
-            annoyanceLevel = 0;
+            _currentKillProbability = initialKillProbability;
             netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.ArmGrab);
             
             // kill player with animation event
             yield return new WaitForSeconds(2.5f);
             netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.Grind);
             yield return new WaitForSeconds(4);
-        }
-        else // dont kill player
-        {
-            annoyanceLevel++;
         }
         
         SpawnCola();
@@ -419,23 +403,32 @@ public class VileVendingMachineServer : EnemyAI
     
     private bool IsColliderColliding(Collider collider)
     {
+        #if DEBUG
         Collider[] collidingObjects = Physics.OverlapBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation);
         foreach (Collider obj in collidingObjects) {
             LogDebug("Colliding with: " + obj.name);
         }
         return collidingObjects.Length > 0;
-        //return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation);
+        
+        #else
+        return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation);
+        
+        #endif
     }
     
     private bool IsColliderColliding(Collider collider, LayerMask layerMask)
     {
+        #if DEBUG
         Collider[] collidingObjects = Physics.OverlapBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation, layerMask);
         foreach (Collider obj in collidingObjects) {
             LogDebug("Colliding with: " + obj.name);
-            DrawDebugCircleAtPosition(obj.bounds.center);
         }
         return collidingObjects.Length > 0;
-        //return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation);
+    
+        #else
+        return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation, layerMask);
+        
+        #endif
     }
 
     private void SpawnCola()
@@ -443,26 +436,28 @@ public class VileVendingMachineServer : EnemyAI
         HandleSpawnCola(_vendingMachineId);
     }
 
-    private static bool IsFireExitAllowedOutside()
+    private bool IsFireExitAllowedOutside()
     {
-        string[] noFireExitDoors =
+        string[] allowedFireExitDoors =
         [
-            "Level1Experimentation",
-            "Level8Titan",
+            "Level5Dine"
         ];
 
-        return noFireExitDoors.All(mapName => StartOfRound.Instance.currentLevel.sceneName != mapName);
+        LogDebug($"Fire exit allowed outside: {allowedFireExitDoors.All(mapName => StartOfRound.Instance.currentLevel.sceneName == mapName)}");
+        return allowedFireExitDoors.All(mapName => StartOfRound.Instance.currentLevel.sceneName == mapName);
     }
 
-    private static bool IsFireExitAllowedInside()
+    private bool IsFireExitAllowedInside()
     {
-        string[] noFireExitDoors =
+        string[] allowedFireExitDoors =
         [
-            "Level1Flow",
+            ""
         ];
 
-        return noFireExitDoors.All(dungeonName =>
-            RoundManager.Instance.dungeonGenerator.Generator.DungeonFlow.name != dungeonName);
+        LogDebug($"Fire exit allowed inside: {allowedFireExitDoors.All(dungeonName =>
+            RoundManager.Instance.dungeonGenerator.Generator.DungeonFlow.name == dungeonName)}");
+        return allowedFireExitDoors.All(dungeonName =>
+            RoundManager.Instance.dungeonGenerator.Generator.DungeonFlow.name == dungeonName);
     }
     
     private void DrawDebugHorizontalLineAtTransform(Transform transform, Color colour = new())
@@ -551,6 +546,13 @@ public class VileVendingMachineServer : EnemyAI
     {
         return _vendingMachineId;
     }
+
+    private void VendingMachinePlacementFail()
+    {
+        LogDebug("Vending machine could not be placed");
+        VendingMachineRegistry.IsPlacementInProgress = false;
+        KillEnemyClientRpc(true);
+    }
     
     private void LogDebug(string msg)
     {
@@ -560,3 +562,9 @@ public class VileVendingMachineServer : EnemyAI
         #endif
     }
 }
+
+/*
+ * TODO: Add interact trigger icon
+ * TODO: Test vending machine placement in different maps
+ * TODO: Make better annoyance mechanism 
+*/

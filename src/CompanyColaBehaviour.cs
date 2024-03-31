@@ -55,6 +55,8 @@ public class CompanyColaBehaviour : PhysicsProp
 
     public override void LateUpdate()
     {
+        transform.localScale = new Vector3(1.5f, 1.5f, 1.5f);
+        
         if (isPartOfVendingMachine) return;
         base.LateUpdate();
     }
@@ -101,6 +103,7 @@ public class CompanyColaBehaviour : PhysicsProp
         isPartOfVendingMachine = false;
         isPhysicsEnabled = false;
         if (IsOwner) Destroy(GetComponent<Rigidbody>());
+        if (IsOwner) Destroy(GetComponent<ScanNodeProperties>());
     }
 
     public void UpdateScrapValue(int value)

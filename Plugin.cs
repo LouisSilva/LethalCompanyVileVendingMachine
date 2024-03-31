@@ -124,6 +124,12 @@ namespace LethalCompanyVileVendingMachine
         public readonly ConfigEntry<bool> CanSpawnOutsideMaster;
         public readonly ConfigEntry<bool> CanSpawnInsideMaster;
         public readonly ConfigEntry<bool> AlwaysSpawnOutsideMainEntrance;
+        
+        // General
+        public readonly ConfigEntry<float> InitialKillProbability;
+        public readonly ConfigEntry<float> KillProbabilityGrowthFactor;
+        public readonly ConfigEntry<float> KillProbabilityReductionFactor;
+        
 
         public readonly ConfigEntry<int> ColaMaxValue;
         public readonly ConfigEntry<int> ColaMinValue;
@@ -193,6 +199,27 @@ namespace LethalCompanyVileVendingMachine
                 "Always Spawn At Main Entrance First",
                 false,
                 "Whether a vending machine should always try to spawn outside the main entrance first, before considering fire exits or spawning inside the dungeon"
+            );
+            
+            InitialKillProbability = cfg.Bind(
+                "General",
+                "Initial Kill Probability",
+                0.01f,
+                "The initial probability of the vending machine killing you when you give it an item"
+            );
+            
+            KillProbabilityGrowthFactor = cfg.Bind(
+                "General",
+                "Kill Probability Growth Factor",
+                4.64f,
+                "How much the probability of the vending machine killing you goes up when giving it an item (exponential)"
+            );
+            
+            KillProbabilityReductionFactor = cfg.Bind(
+                "General",
+                "Kill Probability Reduction Factor",
+                0.25f,
+                "How much the probability of the vending machine killing you goes down when giving it an expensive item (the current probability is multiplied by this number)"
             );
             
             ColaMinValue = cfg.Bind(

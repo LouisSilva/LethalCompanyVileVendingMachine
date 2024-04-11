@@ -62,7 +62,6 @@ namespace LethalCompanyVileVendingMachine
         private void SetupVolatileVendingMachine()
         {
             _volatileVendingMachineEnemyType = Assets.MainAssetBundle.LoadAsset<EnemyType>("VolatileVendingMachine");
-            _volatileVendingMachineEnemyType.PowerLevel = VolatileVendingMachineConfig.Instance.PowerLevel.Value;
             _volatileVendingMachineEnemyType.MaxCount = VolatileVendingMachineConfig.Instance.MaxAmount.Value;
             
             TerminalNode volatileVendingMachineTerminalNode = Assets.MainAssetBundle.LoadAsset<TerminalNode>("VolatileVendingMachineTN");
@@ -117,7 +116,6 @@ namespace LethalCompanyVileVendingMachine
         // Spawn values
         public readonly ConfigEntry<int> SpawnRate;
         public readonly ConfigEntry<int> MaxAmount;
-        public readonly ConfigEntry<int> PowerLevel;
         public readonly ConfigEntry<Levels.LevelTypes> SpawnLevelTypes;
         public readonly ConfigEntry<bool> CanSpawnAtMainDoorMaster;
         public readonly ConfigEntry<bool> CanSpawnAtFireExitMaster;
@@ -130,7 +128,6 @@ namespace LethalCompanyVileVendingMachine
         public readonly ConfigEntry<float> KillProbabilityGrowthFactor;
         public readonly ConfigEntry<float> KillProbabilityReductionFactor;
         
-
         public readonly ConfigEntry<int> ColaMaxValue;
         public readonly ConfigEntry<int> ColaMinValue;
 
@@ -150,13 +147,6 @@ namespace LethalCompanyVileVendingMachine
                 "Max Amount",
                 1,
                 "The max amount of vending machines"
-            );
-            
-            PowerLevel = cfg.Bind(
-                "Spawn Values",
-                "Power Level",
-                1,
-                "The power level of the vending machine"
             );
             
             SpawnLevelTypes = cfg.Bind(

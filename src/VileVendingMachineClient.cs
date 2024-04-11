@@ -1,9 +1,9 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using BepInEx.Logging;
 using GameNetcodeStuff;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.VFX;
 using Logger = UnityEngine.Logger;
 
@@ -18,10 +18,17 @@ public class VileVendingMachineClient : MonoBehaviour
     [Header("Audio")] [Space(5f)] 
     [SerializeField] private AudioSource creatureVoiceSource;
     [SerializeField] private AudioSource creatureSfxSource;
+    public AudioClip dropCanSfx;
+    public AudioClip blendSfx;
+    public AudioClip flapCreakFullSfx;
+    public AudioClip crunchSfx;
+    public AudioClip flapCreakOpenSfx;
+    public AudioClip flapCreakCloseSfx;
 
     [Header("Transforms")] [Space(5f)]
     [SerializeField] private Transform handBone;
     [SerializeField] private Transform itemHolder;
+    [SerializeField] private Transform eye;
 
     [Header("Controllers")] [Space(5f)] 
     [SerializeField] private VileVendingMachineNetcodeController netcodeController;
@@ -30,6 +37,14 @@ public class VileVendingMachineClient : MonoBehaviour
     [SerializeField] private SkinnedMeshRenderer renderer;
     [SerializeField] private VisualEffect materializeVfx;
     #pragma warning restore 0649
+
+    public enum AudioClipTypes
+    {
+        DropCan,
+        Blend,
+        FlapCreak,
+        Crunch,
+    }
 
     public static readonly int ArmAccept = Animator.StringToHash("accept");
     public static readonly int ArmGrab = Animator.StringToHash("grab");
@@ -42,6 +57,7 @@ public class VileVendingMachineClient : MonoBehaviour
     private const string NoItemsText = "No items to place...";
 
     private bool _itemInHand;
+    private bool _increasingFearLevel;
 
     private PlayerControllerB _targetPlayer;
 
@@ -59,6 +75,8 @@ public class VileVendingMachineClient : MonoBehaviour
         netcodeController.OnUpdateColaNetworkObjectReference += HandleUpdateColaNetworkObjectReference;
         netcodeController.OnSetMeshEnabled += HandleSetMeshEnabled;
         netcodeController.OnPlayMaterializeVfx += HandlePlayMaterializeVfx;
+        netcodeController.OnPlayCreatureSfx += HandlePlayCreatureSfx;
+        netcodeController.OnIncreaseFearLevelWhenPlayerBlended += HandleIncreaseFearLevelWhenPlayerBlended;
     }
 
     private void OnDestroy()
@@ -73,6 +91,8 @@ public class VileVendingMachineClient : MonoBehaviour
         netcodeController.OnUpdateColaNetworkObjectReference -= HandleUpdateColaNetworkObjectReference;
         netcodeController.OnSetMeshEnabled -= HandleSetMeshEnabled;
         netcodeController.OnPlayMaterializeVfx -= HandlePlayMaterializeVfx;
+        netcodeController.OnPlayCreatureSfx -= HandlePlayCreatureSfx;
+        netcodeController.OnIncreaseFearLevelWhenPlayerBlended -= HandleIncreaseFearLevelWhenPlayerBlended;
     }
 
     private void Start()
@@ -85,10 +105,71 @@ public class VileVendingMachineClient : MonoBehaviour
     {
         UpdateInteractTriggers();
     }
-    
-    private void HandlePlayerDiscardHeldItem(string recievedVendingMachineId, int playerClientId)
+
+    private void HandleIncreaseFearLevelWhenPlayerBlended(string receivedVendingMachineId)
     {
-        if (_vendingMachineId != recievedVendingMachineId) return;
+        if (_vendingMachineId != receivedVendingMachineId) return;
+
+        _increasingFearLevel = true;
+        LogDebug("Starting coroutine for increasing fear");
+        StartCoroutine(IncreaseFearLevelForArmGrab());
+    }
+
+    private IEnumerator IncreaseFearLevelForArmGrab()
+    {
+        while (_increasingFearLevel)
+        {
+            if (GameNetworkManager.Instance.localPlayerController.HasLineOfSightToPosition(eye.position, 50f, 30, 3f))
+            {
+                LogDebug("Increasing fear level");
+                GameNetworkManager.Instance.localPlayerController.JumpToFearLevel(1);
+                GameNetworkManager.Instance.localPlayerController.IncreaseFearLevelOverTime(0.8f);
+            }
+
+            yield return new WaitForSeconds(0.1f);
+        }
+    }
+
+    private void HandlePlayCreatureSfx(string receivedVendingMachineId, int audioClipType, bool interrupt = true)
+    {
+        if (_vendingMachineId != receivedVendingMachineId) return;
+
+        AudioClip audioClip = audioClipType switch
+        {
+            (int)AudioClipTypes.DropCan => dropCanSfx,
+            (int)AudioClipTypes.Blend => blendSfx,
+            (int)AudioClipTypes.FlapCreak => flapCreakFullSfx,
+            (int)AudioClipTypes.Crunch => crunchSfx,
+            _ => null
+        };
+
+        if (audioClip == null)
+        {
+            _mls.LogError($"Vending machine audio clip index '{audioClipType}' is null");
+            return;
+        }
+        
+        PlaySfx(audioClip, interrupt);
+    }
+
+    private void PlaySfx(AudioClip clip, bool interrupt = true)
+    {
+        if (clip == null)
+        {
+            _mls.LogError($"Vending machine audio clip is null");
+            return;
+        }
+        
+        LogDebug($"Playing audio clip: {clip.name}");
+        
+        if (interrupt) creatureSfxSource.Stop(true);
+        creatureSfxSource.PlayOneShot(clip);
+        WalkieTalkie.TransmitOneShotAudio(creatureSfxSource, clip, creatureSfxSource.volume);
+    }
+    
+    private void HandlePlayerDiscardHeldItem(string receivedVendingMachineId, int playerClientId)
+    {
+        if (_vendingMachineId != receivedVendingMachineId) return;
         _itemInHand = true;
         if (GameNetworkManager.Instance.localPlayerController != StartOfRound.Instance.allPlayerScripts[playerClientId])
             return;
@@ -107,10 +188,10 @@ public class VileVendingMachineClient : MonoBehaviour
         netcodeController.PlaceItemInHandServerRpc(_vendingMachineId, item.GetComponent<NetworkObject>(), placePosition);
     }
 
-    private void HandlePlaceItemInHand(string recievedVendingMachineId, NetworkObjectReference networkObjectReference,
+    private void HandlePlaceItemInHand(string receivedVendingMachineId, NetworkObjectReference networkObjectReference,
         Vector3 position)
     {
-        if (_vendingMachineId != recievedVendingMachineId) return;
+        if (_vendingMachineId != receivedVendingMachineId) return;
         if (!networkObjectReference.TryGet(out NetworkObject networkObject)) return;
         GrabbableObject item = networkObject.GetComponent<GrabbableObject>();
         
@@ -140,12 +221,13 @@ public class VileVendingMachineClient : MonoBehaviour
     {
         if (GameNetworkManager.Instance.localPlayerController == _targetPlayer)
         {
-            HUDManager.Instance.ShakeCamera(ScreenShakeType.Small);
+            HUDManager.Instance.ShakeCamera(ScreenShakeType.Big);
             yield return new WaitForSeconds(0.05f);
             _targetPlayer.KillPlayer(Vector3.zero, true, CauseOfDeath.Crushing, 0);
         }
 
         yield return new WaitUntil(() => _targetPlayer.deadBody != null);
+        _increasingFearLevel = false;
         if (_targetPlayer.deadBody != null)
         {
             _targetPlayer.deadBody.attachedTo = handBone.transform;
@@ -167,9 +249,38 @@ public class VileVendingMachineClient : MonoBehaviour
         }
     }
 
+    public void OnAnimationEventIncreaseFearLevelWhenPlayerBlended()
+    {
+        HandleIncreaseFearLevelWhenPlayerBlended(_vendingMachineId);
+    }
+    
+    public void OnAnimationEventStopFearIncreasing()
+    {
+        _increasingFearLevel = false;
+    }
+
+    public void OnAnimationEventPlayFlapCreak(int type)
+    {
+        switch (type)
+        {
+            case 0:
+                PlaySfx(flapCreakOpenSfx);
+                break;
+            case 1:
+                PlaySfx(flapCreakCloseSfx);
+                break;
+        }
+    }
+
     public void OnAnimationEventEnableColaPhysics()
     {
+        PlaySfx(flapCreakFullSfx);
         _itemInHand = false;
+        
+        CompanyColaBehaviour cola = _cola.GetComponent<CompanyColaBehaviour>();
+        cola.grabbable = true;
+        cola.grabbableToEnemies = true;
+        
         _cola.transform.SetParent(null);
         Rigidbody colaRigidbody = _cola.GetComponent<Rigidbody>();
         colaRigidbody.isKinematic = false;
@@ -179,8 +290,12 @@ public class VileVendingMachineClient : MonoBehaviour
 
     public void OnAnimationEventSpawnCola()
     {
-        // if (!NetworkManager.Singleton.IsClient || !netcodeController.IsOwner) return;
-        // netcodeController.SpawnColaServerRpc(_vendingMachineId);
+        PlaySfx(crunchSfx, false);
+    }
+
+    public void OnAnimationEventPlayBlendSfx()
+    {
+        PlaySfx(blendSfx);
     }
 
     private void UpdateInteractTriggers()
@@ -224,9 +339,9 @@ public class VileVendingMachineClient : MonoBehaviour
         netcodeController.DespawnHeldItemServerRpc(_vendingMachineId);
     }
 
-    private void HandlePlayMaterializeVfx(string recievedVendingMachineId, Vector3 finalPosition, Quaternion finalRotation)
+    private void HandlePlayMaterializeVfx(string receivedVendingMachineId, Vector3 finalPosition, Quaternion finalRotation)
     {
-        if (_vendingMachineId != recievedVendingMachineId) return;
+        if (_vendingMachineId != receivedVendingMachineId) return;
         StartCoroutine(PlayMaterializeVfx(finalPosition, finalRotation));
     }
 
@@ -241,23 +356,26 @@ public class VileVendingMachineClient : MonoBehaviour
         renderer.enabled = true;
     }
 
-    private void HandleSetMeshEnabled(string recievedVendingMachineId, bool meshEnabled)
+    private void HandleSetMeshEnabled(string receivedVendingMachineId, bool meshEnabled)
     {
-        if (_vendingMachineId != recievedVendingMachineId) return;
+        if (_vendingMachineId != receivedVendingMachineId) return;
         renderer.enabled = meshEnabled;
     }
 
-    private void HandleUpdateColaNetworkObjectReference(string recievedVendingMachineId,
-        NetworkObjectReference colaNetworkObjectReference)
+    private void HandleUpdateColaNetworkObjectReference(string receivedVendingMachineId,
+        NetworkObjectReference colaNetworkObjectReference, int colaValue)
     {
-        if (_vendingMachineId != recievedVendingMachineId) return;
+        if (_vendingMachineId != receivedVendingMachineId) return;
         if (!colaNetworkObjectReference.TryGet(out NetworkObject colaNetworkObject)) return;
         _cola = colaNetworkObject;
+
+        CompanyColaBehaviour colaBehaviour = _cola.GetComponent<CompanyColaBehaviour>();
+        colaBehaviour.UpdateScrapValue(colaValue);
     }
     
-    private void HandleChangeTargetPlayer(string recievedVendingMachineId, int playerClientId)
+    private void HandleChangeTargetPlayer(string receivedVendingMachineId, int playerClientId)
     {
-        if (_vendingMachineId != recievedVendingMachineId) return;
+        if (_vendingMachineId != receivedVendingMachineId) return;
         if (playerClientId == -69420)
         {
             _targetPlayer = null;
@@ -267,26 +385,26 @@ public class VileVendingMachineClient : MonoBehaviour
         _targetPlayer = StartOfRound.Instance.allPlayerScripts[playerClientId];
     }
     
-    private void HandleInitializeConfigValues(string recievedVendingMachineId)
+    private void HandleInitializeConfigValues(string receivedVendingMachineId)
     {
-        if (_vendingMachineId != recievedVendingMachineId) return;
+        if (_vendingMachineId != receivedVendingMachineId) return;
     }
 
-    private void SetBool(string recievedVendingMachineId, int parameter, bool value)
+    private void SetBool(string receivedVendingMachineId, int parameter, bool value)
     {
-        if (_vendingMachineId != recievedVendingMachineId) return;
+        if (_vendingMachineId != receivedVendingMachineId) return;
         animator.SetBool(parameter, value);
     }
 
-    private void SetTrigger(string recievedVendingMachineId, int parameter)
+    private void SetTrigger(string receivedVendingMachineId, int parameter)
     {
-        if (_vendingMachineId != recievedVendingMachineId) return;
+        if (_vendingMachineId != receivedVendingMachineId) return;
         animator.SetTrigger(parameter);
     }
 
-    private void HandleUpdateVendingMachineIdentifier(string recievedVendingMachineId)
+    private void HandleUpdateVendingMachineIdentifier(string receivedVendingMachineId)
     {
-        _vendingMachineId = recievedVendingMachineId;
+        _vendingMachineId = receivedVendingMachineId;
     }
 
     private void LogDebug(string msg)

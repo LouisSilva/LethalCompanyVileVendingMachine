@@ -1,6 +1,5 @@
 ﻿using System;
 using BepInEx.Logging;
-using MonoMod.Cil;
 using Unity.Netcode;
 using UnityEngine;
 using Logger = BepInEx.Logging.Logger;
@@ -21,10 +20,11 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     public event Action<string, NetworkObjectReference> OnUpdateServerHeldItemCopy;
     public event Action<string, int> OnChangeTargetPlayer;
     public event Action<string> OnSpawnCola;
-    public event Action<string, NetworkObjectReference> OnUpdateColaNetworkObjectReference;
+    public event Action<string, NetworkObjectReference, int> OnUpdateColaNetworkObjectReference;
     public event Action<string, bool> OnSetMeshEnabled;
     public event Action<string, Vector3, Quaternion> OnPlayMaterializeVfx;
-    
+    public event Action<string, int, bool> OnPlayCreatureSfx;
+    public event Action<string> OnIncreaseFearLevelWhenPlayerBlended;
 
     private void Start()
     {
@@ -33,89 +33,101 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     }
 
     [ClientRpc]
-    public void PlayMaterializeVfxClientRpc(string recievedVendingMachineId, Vector3 finalPosition, Quaternion finalRotation)
+    public void IncreaseFearLevelWhenPlayerBlendedClientRpc(string receivedVendingMachineId)
     {
-        OnPlayMaterializeVfx?.Invoke(recievedVendingMachineId, finalPosition, finalRotation);
+        OnIncreaseFearLevelWhenPlayerBlended?.Invoke(receivedVendingMachineId);
+    }
+    
+    [ClientRpc]
+    public void PlaySfxClientRpc(string receivedVendingMachineId, int audioClipType, bool interrupt = true)
+    {
+        OnPlayCreatureSfx?.Invoke(receivedVendingMachineId, audioClipType, interrupt);
     }
 
     [ClientRpc]
-    public void SetMeshEnabledClientRpc(string recievedVendingMachineId, bool meshEnabled)
+    public void PlayMaterializeVfxClientRpc(string receivedVendingMachineId, Vector3 finalPosition, Quaternion finalRotation)
     {
-        OnSetMeshEnabled?.Invoke(recievedVendingMachineId, meshEnabled);
-    }
-
-    [ServerRpc(RequireOwnership = false)]
-    public void SpawnColaServerRpc(string recievedVendingMachineId)
-    {
-        OnSpawnCola?.Invoke(recievedVendingMachineId);
+        OnPlayMaterializeVfx?.Invoke(receivedVendingMachineId, finalPosition, finalRotation);
     }
 
     [ClientRpc]
-    public void UpdateColaNetworkObjectReferenceClientRpc(string recievedVendingMachineId,
-        NetworkObjectReference colaNetworkObjectReference)
+    public void SetMeshEnabledClientRpc(string receivedVendingMachineId, bool meshEnabled)
     {
-        OnUpdateColaNetworkObjectReference?.Invoke(recievedVendingMachineId, colaNetworkObjectReference);
+        OnSetMeshEnabled?.Invoke(receivedVendingMachineId, meshEnabled);
     }
 
     [ServerRpc(RequireOwnership = false)]
-    public void UpdateServerHeldItemCopyServerRpc(string recievedVendingMachineId,
+    public void SpawnColaServerRpc(string receivedVendingMachineId)
+    {
+        OnSpawnCola?.Invoke(receivedVendingMachineId);
+    }
+
+    [ClientRpc]
+    public void UpdateColaNetworkObjectReferenceClientRpc(string receivedVendingMachineId,
+        NetworkObjectReference colaNetworkObjectReference, int colaValue)
+    {
+        OnUpdateColaNetworkObjectReference?.Invoke(receivedVendingMachineId, colaNetworkObjectReference, colaValue);
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    public void UpdateServerHeldItemCopyServerRpc(string receivedVendingMachineId,
         NetworkObjectReference networkObjectReference)
     {
-        OnUpdateServerHeldItemCopy?.Invoke(recievedVendingMachineId, networkObjectReference);
+        OnUpdateServerHeldItemCopy?.Invoke(receivedVendingMachineId, networkObjectReference);
     }
 
     [ServerRpc(RequireOwnership = false)]
-    public void PlaceItemInHandServerRpc(string recievedVendingMachineId, NetworkObjectReference networkObjectReference, Vector3 position)
+    public void PlaceItemInHandServerRpc(string receivedVendingMachineId, NetworkObjectReference networkObjectReference, Vector3 position)
     {
-        PlaceItemInHandClientRpc(recievedVendingMachineId, networkObjectReference, position);
+        PlaceItemInHandClientRpc(receivedVendingMachineId, networkObjectReference, position);
     }
 
     [ServerRpc(RequireOwnership = false)]
-    public void DespawnHeldItemServerRpc(string recievedVendingMachineId)
+    public void DespawnHeldItemServerRpc(string receivedVendingMachineId)
     {
-        OnDespawnHeldItem?.Invoke(recievedVendingMachineId);
+        OnDespawnHeldItem?.Invoke(receivedVendingMachineId);
     }
 
     [ClientRpc]
-    public void ChangeTargetPlayerClientRpc(string recievedVendingMachineId, int playerClientId)
+    public void ChangeTargetPlayerClientRpc(string receivedVendingMachineId, int playerClientId)
     {
-        OnChangeTargetPlayer?.Invoke(recievedVendingMachineId, playerClientId);
+        OnChangeTargetPlayer?.Invoke(receivedVendingMachineId, playerClientId);
     }
     
     [ClientRpc]
-    public void PlaceItemInHandClientRpc(string recievedVendingMachineId, NetworkObjectReference networkObjectReference, Vector3 position)
+    public void PlaceItemInHandClientRpc(string receivedVendingMachineId, NetworkObjectReference networkObjectReference, Vector3 position)
     {
-        OnPlaceItemInHand?.Invoke(recievedVendingMachineId, networkObjectReference, position);
+        OnPlaceItemInHand?.Invoke(receivedVendingMachineId, networkObjectReference, position);
     }
     
     [ClientRpc]
-    public void PlayerDiscardHeldObjectClientRpc(string recievedVendingMachineId, int playerClientId)
+    public void PlayerDiscardHeldObjectClientRpc(string receivedVendingMachineId, int playerClientId)
     {
-        OnPlayerDiscardHeldObject?.Invoke(recievedVendingMachineId, playerClientId);
+        OnPlayerDiscardHeldObject?.Invoke(receivedVendingMachineId, playerClientId);
     }
 
     [ClientRpc]
-    public void InitializeConfigValuesClientRpc(string recievedVendingMachineId)
+    public void InitializeConfigValuesClientRpc(string receivedVendingMachineId)
     {
-        OnInitializeConfigValues?.Invoke(recievedVendingMachineId);
+        OnInitializeConfigValues?.Invoke(receivedVendingMachineId);
     }
 
     [ClientRpc]
-    public void UpdateVendingMachineIdClientRpc(string recievedVendingMachineId)
+    public void UpdateVendingMachineIdClientRpc(string receivedVendingMachineId)
     {
-        OnUpdateVendingMachineIdentifier?.Invoke(recievedVendingMachineId);
+        OnUpdateVendingMachineIdentifier?.Invoke(receivedVendingMachineId);
     }
     
     [ClientRpc]
-    public void ChangeAnimationParameterBoolClientRpc(string recievedVendingMachineId, int animationId, bool value)
+    public void ChangeAnimationParameterBoolClientRpc(string receivedVendingMachineId, int animationId, bool value)
     {
-        OnChangeAnimationParameterBool?.Invoke(recievedVendingMachineId, animationId, value);
+        OnChangeAnimationParameterBool?.Invoke(receivedVendingMachineId, animationId, value);
     }
 
     [ClientRpc]
-    public void DoAnimationClientRpc(string recievedVendingMachineId, int animationId)
+    public void DoAnimationClientRpc(string receivedVendingMachineId, int animationId)
     {
-        OnDoAnimation?.Invoke(recievedVendingMachineId, animationId);
+        OnDoAnimation?.Invoke(receivedVendingMachineId, animationId);
     }
 
     private void LogDebug(string msg)

@@ -33,6 +33,8 @@ public class CompanyColaBehaviour : PhysicsProp
         fallTime = 1f;
         hasHitGround = true;
         reachedFloorTarget = true;
+        grabbable = true;
+        grabbableToEnemies = true;
         targetFloorPosition = transform.localPosition;
         _lastPositionY = transform.position.y;
         
@@ -103,7 +105,6 @@ public class CompanyColaBehaviour : PhysicsProp
         isPartOfVendingMachine = false;
         isPhysicsEnabled = false;
         if (IsOwner) Destroy(GetComponent<Rigidbody>());
-        if (IsOwner) Destroy(GetComponent<ScanNodeProperties>());
     }
 
     public void UpdateScrapValue(int value)

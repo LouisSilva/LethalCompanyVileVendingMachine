@@ -22,7 +22,6 @@ public class VileVendingMachineServer : EnemyAI
 
     [Header("AI")]
     [Space(5f)]
-    [SerializeField] private float placementIntervalTimer = 0.01f;
     [SerializeField] private float initialKillProbability = 0.01f;
     [SerializeField] private float killProbabilityGrowthFactor = 4.64f;
     [SerializeField] private float killProbabilityReductionFactor = 0.25f;
@@ -177,6 +176,7 @@ public class VileVendingMachineServer : EnemyAI
                 IEnumerable<Tuple<Transform, int>> doorTransforms = GetDoorTransforms(door.entranceId);
                 foreach (Tuple<Transform, int> doorTransformTuple in doorTransforms)
                 {
+                    yield return null;
                     if (doorTransformTuple.Item2 != i) continue;
                     doorPosition = doorTransformTuple.Item1.position;
                     break;
@@ -205,7 +205,7 @@ public class VileVendingMachineServer : EnemyAI
                     
                     transform.position += vectorA.normalized * 0.02f;
                     counter++;
-                    yield return new WaitForSeconds(placementIntervalTimer);
+                    yield return null;
                 }
 
                 // Move vending machine to the floor
@@ -221,6 +221,7 @@ public class VileVendingMachineServer : EnemyAI
                 float leftDistance = GetDistanceToObjectInDirection(-transform.right, 30f);
                 float rightDistance = GetDistanceToObjectInDirection(transform.right, 30f);
 
+                yield return null;
                 float distanceToDoor = leftDistance > rightDistance ? leftDistance : rightDistance;
                 if (distanceToDoor < 3.1f) continue;
 
@@ -238,10 +239,10 @@ public class VileVendingMachineServer : EnemyAI
                 VendingMachineRegistry.AddVendingMachine(_vendingMachineId, door, leftOrRight, i);
                 VendingMachineRegistry.IsPlacementInProgress = false;
                 netcodeController.PlayMaterializeVfxClientRpc(_vendingMachineId, transform.position, transform.rotation);
-                if (callback == null) yield break;
                 yield return new WaitForSeconds(5f);
                 EnableEnemyMesh(true);
-                callback.Invoke();
+                
+                callback?.Invoke();
                 yield break;
             }
         }
@@ -287,10 +288,10 @@ public class VileVendingMachineServer : EnemyAI
         return [entranceTuple, exitTuple];
     }
 
-    private void HandleSpawnCola(string recievedVendingMachineId)
+    private void HandleSpawnCola(string receivedVendingMachineId)
     {
         if (!IsServer) return;
-        if (recievedVendingMachineId != _vendingMachineId) return;
+        if (receivedVendingMachineId != _vendingMachineId) return;
         
         /*
         GameObject colaObject = Instantiate(
@@ -314,6 +315,7 @@ public class VileVendingMachineServer : EnemyAI
         if (colaBehaviour == null) _mls.LogError("colaBehaviour is null");
         colaBehaviour.isPartOfVendingMachine = true;
         colaBehaviour.isPhysicsEnabled = true;
+        colaBehaviour.grabbableToEnemies = false;
         int colaScrapValue = UnityEngine.Random.Range(
             VolatileVendingMachineConfig.Instance.ColaMinValue.Value, 
             VolatileVendingMachineConfig.Instance.ColaMaxValue.Value + 1);
@@ -325,13 +327,13 @@ public class VileVendingMachineServer : EnemyAI
         
         colaObject.GetComponent<NetworkObject>().Spawn();
         colaObject.GetComponent<Transform>().SetParent(colaPlaceholder);
-        netcodeController.UpdateColaNetworkObjectReferenceClientRpc(_vendingMachineId, colaObject.GetComponent<NetworkObject>());
+        netcodeController.UpdateColaNetworkObjectReferenceClientRpc(_vendingMachineId, colaObject.GetComponent<NetworkObject>(), colaScrapValue);
     }
 
-    private void HandleDespawnHeldItem(string recievedVendingMachineId)
+    private void HandleDespawnHeldItem(string receivedVendingMachineId)
     {
         if (!IsServer) return;
-        if (recievedVendingMachineId != _vendingMachineId) return;
+        if (receivedVendingMachineId != _vendingMachineId) return;
         
         NetworkObject[] grabbableObjects = itemHolder.GetComponentsInChildren<NetworkObject>();
         if (grabbableObjects.Length <= 0)
@@ -369,9 +371,12 @@ public class VileVendingMachineServer : EnemyAI
     {
         yield return new WaitForSeconds(0.1f);
         netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.ArmRetract);
-        int heldItemValue = itemHolder.GetComponentInChildren<ScanNodeProperties>().scrapValue;
-        yield return new WaitForSeconds(2.5f);
+
+        int heldItemValue = 20;
+        ScanNodeProperties heldItemProperties = itemHolder.GetComponentInChildren<ScanNodeProperties>();
+        if (heldItemProperties != null) heldItemValue = heldItemProperties.scrapValue;
         
+        yield return new WaitForSeconds(3f);
         _currentKillProbability = heldItemValue > 90 ? 
             Mathf.Max(initialKillProbability, _currentKillProbability * killProbabilityReductionFactor) : 
             Mathf.Min(_currentKillProbability * killProbabilityGrowthFactor, 1f);
@@ -440,7 +445,7 @@ public class VileVendingMachineServer : EnemyAI
     {
         string[] allowedFireExitDoors =
         [
-            "Level5Dine"
+            ""
         ];
 
         LogDebug($"Fire exit allowed outside: {allowedFireExitDoors.All(mapName => StartOfRound.Instance.currentLevel.sceneName == mapName)}");
@@ -564,7 +569,5 @@ public class VileVendingMachineServer : EnemyAI
 }
 
 /*
- * TODO: Add interact trigger icon
  * TODO: Test vending machine placement in different maps
- * TODO: Make better annoyance mechanism 
 */

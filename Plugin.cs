@@ -22,7 +22,7 @@ namespace LethalCompanyVileVendingMachine
     {
         public const string ModGuid = $"LCM_VolatileVendingMachine|{ModVersion}";
         private const string ModName = "Lethal Company Volatile Vending Machine Mod";
-        private const string ModVersion = "1.0.1";
+        private const string ModVersion = "1.0.3";
 
         private readonly Harmony _harmony = new(ModGuid);
 
@@ -123,10 +123,12 @@ namespace LethalCompanyVileVendingMachine
         public readonly ConfigEntry<bool> CanSpawnInsideMaster;
         public readonly ConfigEntry<bool> AlwaysSpawnOutsideMainEntrance;
         
-        // General
         public readonly ConfigEntry<float> InitialKillProbability;
         public readonly ConfigEntry<float> KillProbabilityGrowthFactor;
         public readonly ConfigEntry<float> KillProbabilityReductionFactor;
+        
+        
+        public readonly ConfigEntry<float> SoundEffectsVolume;
         
         public readonly ConfigEntry<int> ColaMaxValue;
         public readonly ConfigEntry<int> ColaMinValue;
@@ -187,7 +189,7 @@ namespace LethalCompanyVileVendingMachine
             AlwaysSpawnOutsideMainEntrance = cfg.Bind(
                 "Spawn Values",
                 "Always Spawn At Main Entrance First",
-                false,
+                true,
                 "Whether a vending machine should always try to spawn outside the main entrance first, before considering fire exits or spawning inside the dungeon"
             );
             
@@ -225,6 +227,13 @@ namespace LethalCompanyVileVendingMachine
                 90,
                 "The maximum possible value of a company cola"
             );
+
+            SoundEffectsVolume = cfg.Bind(
+                "Audio",
+                "Sound Effects Volume",
+                1f,
+                "The volume of the sound effects from the vending machine"
+                );
         }
         
         private static void RequestSync() {

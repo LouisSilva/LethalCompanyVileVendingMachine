@@ -20,14 +20,22 @@ public class CompanyColaBehaviour : PhysicsProp
     public AudioSource colaAudioSource;
     public AudioClip[] colaAudioClips;
 
+    #pragma warning disable 0649
+    [SerializeField] private ScanNodeProperties innerScanNode;
+    [SerializeField] private ScanNodeProperties outerScanNode;
+    #pragma warning restore 0649
+    
     public bool isPartOfVendingMachine;
     public bool isPhysicsEnabled;
 
-    public override void Start()
+    private void Awake()
     {
         _colaId = Guid.NewGuid().ToString();
         _mls = Logger.CreateLogSource($"{VileVendingMachinePlugin.ModGuid} | Company Cola {_colaId}");
-        
+    }
+
+    public override void Start()
+    {
         propColliders = gameObject.GetComponentsInChildren<Collider>();
         originalScale = transform.localScale;
         fallTime = 1f;
@@ -110,21 +118,19 @@ public class CompanyColaBehaviour : PhysicsProp
     public void UpdateScrapValue(int value)
     {
         // Two scan node property scripts are needed, because the rigidbody somehow makes the scan node gameobject "hidden"
-        ScanNodeProperties scanNode1 = GetComponent<ScanNodeProperties>();
-        if (scanNode1 != null)
+        if (innerScanNode != null)
         {
-            scanNode1.scrapValue = value;
-            scanNode1.subText = $"Value: {value}";
+            LogDebug("Inner scan node is not null");
+            innerScanNode.scrapValue = value;
+            innerScanNode.subText = $"Value: {value}";
         }
         
-        ScanNodeProperties scanNode2 = GetComponentInChildren<ScanNodeProperties>();
-        if (scanNode2 != null)
+        if (outerScanNode != null)
         {
-            scanNode2.scrapValue = value;
-            scanNode2.subText = $"Value: {value}";
+            LogDebug("Outer scan node is not null");
+            outerScanNode.scrapValue = value;
+            outerScanNode.subText = $"Value: {value}";
         }
-        
-        SetScrapValue(value);
     }
 
     private void LogDebug(string msg)

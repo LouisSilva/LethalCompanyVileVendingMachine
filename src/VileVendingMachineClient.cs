@@ -368,6 +368,7 @@ public class VileVendingMachineClient : MonoBehaviour
         if (_vendingMachineId != receivedVendingMachineId) return;
         if (!colaNetworkObjectReference.TryGet(out NetworkObject colaNetworkObject)) return;
         _cola = colaNetworkObject;
+        LogDebug("Cola network reference was not null yay");
 
         CompanyColaBehaviour colaBehaviour = _cola.GetComponent<CompanyColaBehaviour>();
         colaBehaviour.UpdateScrapValue(colaValue);
@@ -388,6 +389,9 @@ public class VileVendingMachineClient : MonoBehaviour
     private void HandleInitializeConfigValues(string receivedVendingMachineId)
     {
         if (_vendingMachineId != receivedVendingMachineId) return;
+
+        creatureVoiceSource.volume = VolatileVendingMachineConfig.Instance.SoundEffectsVolume.Value;
+        creatureSfxSource.volume = VolatileVendingMachineConfig.Instance.SoundEffectsVolume.Value;
     }
 
     private void SetBool(string receivedVendingMachineId, int parameter, bool value)

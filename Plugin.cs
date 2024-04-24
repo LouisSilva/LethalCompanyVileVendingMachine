@@ -23,7 +23,7 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
 {
     public const string ModGuid = $"LCM_VolatileVendingMachine|{ModVersion}";
     private const string ModName = "Lethal Company Volatile Vending Machine Mod";
-    private const string ModVersion = "1.0.1";
+    private const string ModVersion = "1.0.2";
 
     private readonly Harmony _harmony = new(ModGuid);
 

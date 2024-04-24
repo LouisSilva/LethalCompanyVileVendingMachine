@@ -1,6 +1,6 @@
 {
 	"name": "VileVendingMachine",
-	"version_number": "1.0.1",
+	"version_number": "1.0.2",
 	"website_url": "",
 	"description": "Adds a new Entity The Vile Vending Machine and new Scrap The Company Cola.",
 	"dependencies": [

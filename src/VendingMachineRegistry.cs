@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using BepInEx.Logging;
 using UnityEngine;
 
 namespace LethalCompanyVileVendingMachine;
@@ -18,6 +19,8 @@ public enum EntranceOrExit
 
 public static class VendingMachineRegistry
 {
+    private static readonly ManualLogSource Mls = new($"{VileVendingMachinePlugin.ModGuid} | Volatile Vending Machine Registry");
+    
     public struct VendingMachinePlacement
     {
         public VileVendingMachineServer ServerScript;
@@ -63,9 +66,11 @@ public static class VendingMachineRegistry
                                                                   && vendingMachineKeyValuePair.Value.EntranceOrExit == entranceOrExit);
     }
 
-    public static bool IsVendingMachineInDict(string id)
+    private static bool IsVendingMachineInDict(string id)
     {
-        return VendingMachines.ContainsKey(id);
+        if (id != null) return VendingMachines.ContainsKey(id);
+        Mls.LogWarning("Given string id was null, this should not happen.");
+        return false;
     }
 
     public static Dictionary<string, VendingMachinePlacement> GetVendingMachineRegistry()

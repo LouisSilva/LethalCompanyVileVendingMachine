@@ -310,6 +310,7 @@ public class VileVendingMachineServer : EnemyAI
         netcodeController.PlayMaterializeVfxClientRpc(_vendingMachineId, transform.position, transform.rotation);
         yield return new WaitForSeconds(5f);
         EnableEnemyMesh(true);
+        agent.enabled = false;
                 
         callback?.Invoke();
     }
@@ -627,7 +628,3 @@ public class VileVendingMachineServer : EnemyAI
         #endif
     }
 }
-
-/*
- * TODO: Test vending machine placement in different maps
-*/

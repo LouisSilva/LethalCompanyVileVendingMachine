@@ -199,9 +199,9 @@ public class VileVendingMachineServer : EnemyAI
                 }
 
                 // See if there is a cached placement for this map
-                if (StoredViablePlacements.ContainsKey(StartOfRound.Instance.currentLevel.sceneName))
+                if (StoredViablePlacements.TryGetValue(StartOfRound.Instance.currentLevel.sceneName, out List<Tuple<int, LeftOrRight, Vector3, Quaternion>> placement))
                 {
-                    foreach (Tuple<int, LeftOrRight, Vector3, Quaternion> placementTuple in StoredViablePlacements[StartOfRound.Instance.currentLevel.sceneName].Where(
+                    foreach (Tuple<int, LeftOrRight, Vector3, Quaternion> placementTuple in placement.Where(
                                  placementTuple => 
                                      placementTuple.Item1 == door.entranceId && 
                                      !VendingMachineRegistry.IsDoorAndSideOccupied(placementTuple.Item1, placementTuple.Item2, EntranceOrExit.Entrance) &&
@@ -273,6 +273,8 @@ public class VileVendingMachineServer : EnemyAI
                 }
 
                 // Move vending machine to the left or right
+                // DrawDebugLineAtTransformWithDirection(transform, -transform.right);
+                // DrawDebugLineAtTransformWithDirection(transform, transform.right);
                 float leftDistance = GetDistanceToObjectInDirection(-transform.right, 30f);
                 float rightDistance = GetDistanceToObjectInDirection(transform.right, 30f);
 
@@ -543,12 +545,13 @@ public class VileVendingMachineServer : EnemyAI
         lineRenderer.SetPosition(0, transform.position - transform.right * 5);
         lineRenderer.SetPosition(1, transform.position + transform.right * 5);
     }
-
-    private void DrawDebugLineAtTransformForward(Transform transform, Color colour = new())
+    
+    private void DrawDebugLineAtTransformWithDirection(Transform transform, Vector3 direction, Color colour = new())
     {
         GameObject lineObj = new("ForwardLine");
         lineObj.transform.position = transform.position;
         
+        LogDebug("Drawling line");
         LineRenderer lineRenderer = lineObj.AddComponent<LineRenderer>();
         lineRenderer.material = new Material(Shader.Find("Sprites/Default"));
         lineRenderer.widthMultiplier = 0.1f;
@@ -557,7 +560,7 @@ public class VileVendingMachineServer : EnemyAI
         lineRenderer.startColor = colour;
         lineRenderer.endColor = colour;
         
-        Vector3 lineEnd = transform.position + transform.forward * 8;
+        Vector3 lineEnd = transform.position + direction * 8;
         Vector3 arrowDirection = (lineEnd - transform.position).normalized;
         const float arrowHeadLength = 1f; // Adjust as needed
         const float arrowHeadAngle = 25.0f; // Adjust as needed

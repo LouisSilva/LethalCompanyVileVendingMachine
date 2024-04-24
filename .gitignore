@@ -1,0 +1,10 @@
+﻿obj/
+Assets/
+bin/
+dll/
+UnityProject/
+Thunderstore/vilevendingmachine.zip
+Thunderstore/Vending Machine/LethalCompanyVileVendingMachine.dll
+Thunderstore/Vending Machine/vilevendingmachinebundle
+
+NuGet.Config

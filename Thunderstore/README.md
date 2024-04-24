@@ -1,0 +1,35 @@
+# Vile Vending Machine
+![Logo](https://i.imgur.com/LinyoYH.gif)
+
+Adds a new Entity and Scrap to Lethal Company.
+Fully Compatible with v50
+
+
+# Information:
+The Vile Vending Machine is a dangerous but entirely passive entity. At no point will it chase you down or kill you of its own volition.
+It's your own greed that will cause your death when interacting with it...
+
+You're given the opportunity to trade scrap for a unique item that's worth more then a regular Cola, The Company Cola, this comes at a high risk. The Vile Vending Machine has a chance to grab you, killing you and turning you into a Company Cola instead.
+
+Are you really willing to risk your life for a Cola...?
+
+# Config Features:
+- Sound Effects Volume
+- Initial Kill Probability
+- Kill Growth/Reduction Factor
+- Spawn Rate/Area Spawning
+- Company Cola Min/Max Value
+- Possible Fire Exit/Interior Spawning
+	+ Minor bugs, not 100% Confirmed to work
+
+# Bugs/Suggestions:
+- Please report any bugs via the Lethal Company Modding Discord or contact me via my Discord Server.
+- Any suggestions are welcome! I'm also interested in modeling some more enemies similar to this one so please send me any ideas or suggestions you may have.
+
+Credit:
+- 3D Modeling, Textures, Animation and Sound Effects: MeatBallDemon
+	+ Twittter: ( https://twitter.com/_MeatBallDemon_ )
+	+ Discord Server: ( https://discord.gg/wbbuGE2YJC )
+
+- Programming: Louis Silva
+	+ Github: https://github.com/LouisSilva

@@ -23,6 +23,7 @@
         <PackageReference Include="BepInEx.PluginInfoProps" Version="1.*"/>
         <PackageReference Include="UnityEngine.Modules" Version="2022.3.9" IncludeAssets="compile"/>
         <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.1" PrivateAssets="all"/>
+        <PackageReference Include="Evaisa.LethalLib" Version="0.15.1" />
     </ItemGroup>
 
     <ItemGroup Condition="'$(TargetFramework.TrimEnd(`0123456789`))' == 'net'">
@@ -48,7 +49,7 @@
             <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Lethal Company\Lethal Company_Data\Managed\Unity.Netcode.Runtime.dll</HintPath>
         </Reference>
         <Reference Include="Unity.TextMeshPro">
-          <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Lethal Company\Lethal Company_Data\Managed\Unity.TextMeshPro.dll</HintPath>
+            <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Lethal Company\Lethal Company_Data\Managed\Unity.TextMeshPro.dll</HintPath>
         </Reference>
         <Reference Include="UnityEngine">
             <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Lethal Company\Lethal Company_Data\Managed\UnityEngine.dll</HintPath>
@@ -57,16 +58,8 @@
             <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Lethal Company\Lethal Company_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
         </Reference>
         <Reference Include="UnityEngine.UI">
-          <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Lethal Company\Lethal Company_Data\Managed\UnityEngine.UI.dll</HintPath>
+            <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Lethal Company\Lethal Company_Data\Managed\UnityEngine.UI.dll</HintPath>
         </Reference>
-    </ItemGroup>
-    
-<!--    <ItemGroup>-->
-<!--        <EmbeddedResource Include="Assets\vilevendingmachinebundle" />-->
-<!--    </ItemGroup>-->
-
-    <ItemGroup>
-        <EmbeddedResource Include="Assets\vilevendingmachinebundle" />
     </ItemGroup>
 
     <Target Name="NetcodePatch" AfterTargets="PostBuildEvent">

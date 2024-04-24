@@ -15,6 +15,29 @@ namespace LethalCompanyVileVendingMachine;
 [SuppressMessage("ReSharper", "RedundantDefaultMemberInitializer")]
 public class VileVendingMachineServer : EnemyAI
 {
+    private static readonly Dictionary<string, List<Tuple<int, LeftOrRight, Vector3, Quaternion>>> StoredViablePlacements = new()
+    {
+        { "Level1Experimentation", [new Tuple<int, LeftOrRight, Vector3, Quaternion>(0, LeftOrRight.Left, new Vector3(-113.437f, 2.926f, -14.116f), Quaternion.Euler(0, 90, 0)), 
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(0, LeftOrRight.Right, new Vector3(-113.437f, 2.926f, -23.18f), Quaternion.Euler(0, 90, 0)),
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Left, new Vector3(-133.845f, 25.4f, -52.101f), Quaternion.Euler(0, 90, 0)),
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Right, Vector3.zero, Quaternion.identity)]}, 
+        
+        { "Level2Assurance", [new Tuple<int, LeftOrRight, Vector3, Quaternion>(0, LeftOrRight.Left, new Vector3(134.802f, 6.470059f, 70.641f), Quaternion.Euler(0, -90, 0)), 
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(0, LeftOrRight.Right, new Vector3(127.49f, 6.470059f, 85.131f), Quaternion.Euler(0, -180, 0)),
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Left, new Vector3(110.139f, 15.244f, -70.461f), Quaternion.Euler(0, -45, 0)),
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Right, new Vector3(114.87f, 15.244f, -65.73f), Quaternion.Euler(0, -45, 0))]},
+        
+        { "Level3Vow", [new Tuple<int, LeftOrRight, Vector3, Quaternion>(0, LeftOrRight.Left, new Vector3(-26.221f, -1.181f, 150.428f), Quaternion.Euler(0, -180, 0)), 
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(0, LeftOrRight.Right, new Vector3(-36.91f, -1.181f, 150.428f), Quaternion.Euler(0, -180, 0)),
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Left, new Vector3(-69.86f, -23.48f, 122.2f), Quaternion.Euler(0, 90, 0)),
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Right, new Vector3(-69.86f, -23.48f, 109.61f), Quaternion.Euler(0, 90, 0))]},
+        
+        { "Level8Titan", [new Tuple<int, LeftOrRight, Vector3, Quaternion>(0, LeftOrRight.Left, new Vector3(-33.96f, 47.67f, 10.8f), Quaternion.Euler(0, 125, 0)), 
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(0, LeftOrRight.Right, new Vector3(-37.73f, 47.67f, 5.42f), Quaternion.Euler(0, 125, 0)),
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Left, new Vector3(-41.011f, 47.738f, 4.101f), Quaternion.Euler(0, 90, 0)),
+            new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Right, Vector3.zero, Quaternion.identity)]},
+    };
+    
     private ManualLogSource _mls;
     private string _vendingMachineId;
     
@@ -93,8 +116,11 @@ public class VileVendingMachineServer : EnemyAI
         agent.updateRotation = false;
         agent.updatePosition = false;
         
+        #if DEBUG
+        #else
         netcodeController.SetMeshEnabledClientRpc(_vendingMachineId, false);
         EnableEnemyMesh(false);
+        #endif
 
         try
         {
@@ -167,11 +193,31 @@ public class VileVendingMachineServer : EnemyAI
                 if (door.entranceId != 0 && (int)EntranceOrExit.Exit == i && !isFireExitAllowedInside)
                     continue;
 
-                if (VendingMachineRegistry.IsDoorOccupied(door, i))
+                if (VendingMachineRegistry.IsDoorOccupied(door.entranceId, (EntranceOrExit)i))
                 {
                     continue;
                 }
+
+                // See if there is a cached placement for this map
+                if (StoredViablePlacements.ContainsKey(StartOfRound.Instance.currentLevel.sceneName))
+                {
+                    foreach (Tuple<int, LeftOrRight, Vector3, Quaternion> placementTuple in StoredViablePlacements[StartOfRound.Instance.currentLevel.sceneName].Where(
+                                 placementTuple => 
+                                     placementTuple.Item1 == door.entranceId && 
+                                     !VendingMachineRegistry.IsDoorAndSideOccupied(placementTuple.Item1, placementTuple.Item2, EntranceOrExit.Entrance) &&
+                                     placementTuple.Item3 != Vector3.zero &&
+                                     placementTuple.Item4 != Quaternion.identity))
+                    {
+                        LogDebug("Found cached vending machine placement");
+                        transform.position = placementTuple.Item3;
+                        transform.rotation = placementTuple.Item4;
+                        StartCoroutine(PlacementSuccess(placementTuple.Item1, placementTuple.Item2, (EntranceOrExit)i, callback));
+                        yield break;
+                    }
+                }
+                // If the using the cache stuff didn't work, then try spawning it normally
                 
+                // Gets the transform of the door. It takes into account whether the current door is an entrance or exit
                 Vector3 doorPosition = default;
                 IEnumerable<Tuple<Transform, int>> doorTransforms = GetDoorTransforms(door.entranceId);
                 foreach (Tuple<Transform, int> doorTransformTuple in doorTransforms)
@@ -196,16 +242,25 @@ public class VileVendingMachineServer : EnemyAI
                 int counter = 0;
                 while (!IsColliderAgainstWall(backCollider) || IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask) || IsColliderColliding(mainCollider, StartOfRound.Instance.collidersAndRoomMask))
                 {
-                    LogDebug($"counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
+                    #if DEBUG
+                    LogDebug($"counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, mainCol: { IsColliderColliding(mainCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
+                    LogDebug($"counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, mainCol: { IsColliderColliding(mainCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}");
+                    #endif
+                    
                     if (counter >= 300)
                     {
-                        VendingMachinePlacementFail();
+                        PlacementFail();
                         yield break;
                     }
                     
                     transform.position += vectorA.normalized * 0.02f;
                     counter++;
+                    
+                    #if DEBUG
+                    yield return new WaitForSeconds(0.3f);
+                    #else
                     yield return null;
+                    #endif
                 }
 
                 // Move vending machine to the floor
@@ -225,35 +280,42 @@ public class VileVendingMachineServer : EnemyAI
                 float distanceToDoor = leftDistance > rightDistance ? leftDistance : rightDistance;
                 if (distanceToDoor < 3.1f) continue;
 
-                int leftOrRight = leftDistance > rightDistance ? (int)LeftOrRight.Left : (int)LeftOrRight.Right;
+                LeftOrRight leftOrRight = leftDistance > rightDistance ? LeftOrRight.Left : LeftOrRight.Right;
                 distanceToDoor = 3f;
-                transform.position += vectorB * ((leftOrRight == (int)LeftOrRight.Left ? -1 : 1) * distanceToDoor);
-                
-                Destroy(frontCollider.gameObject);
-                Destroy(backCollider.gameObject);
-                Destroy(floorCollider.gameObject);
+                transform.position += vectorB * ((leftOrRight == LeftOrRight.Left ? -1 : 1) * distanceToDoor);
 
-                // Rigidbody rigidbody = gameObject.AddComponent<Rigidbody>();
-                // rigidbody.isKinematic = true;
-
-                VendingMachineRegistry.AddVendingMachine(_vendingMachineId, door, leftOrRight, i);
-                VendingMachineRegistry.IsPlacementInProgress = false;
-                netcodeController.PlayMaterializeVfxClientRpc(_vendingMachineId, transform.position, transform.rotation);
-                yield return new WaitForSeconds(5f);
-                EnableEnemyMesh(true);
-                
-                callback?.Invoke();
+                StartCoroutine(PlacementSuccess(door.entranceId, leftOrRight, (EntranceOrExit)i, callback));
                 yield break;
+            
             }
         }
 
-        VendingMachinePlacementFail();
+        PlacementFail();
+    }
+
+    private IEnumerator PlacementSuccess(int teleportId, LeftOrRight leftOrRight, EntranceOrExit entranceOrExit, Action callback = null)
+    {
+        LogDebug($"Vending machine was placed successfully at teleportId: {teleportId}");
+        Destroy(frontCollider.gameObject);
+        Destroy(backCollider.gameObject);
+        Destroy(floorCollider.gameObject);
+
+        // Rigidbody rigidbody = gameObject.AddComponent<Rigidbody>();
+        // rigidbody.isKinematic = true;
+
+        VendingMachineRegistry.AddVendingMachine(_vendingMachineId, teleportId, leftOrRight, entranceOrExit, transform);
+        VendingMachineRegistry.IsPlacementInProgress = false;
+        netcodeController.PlayMaterializeVfxClientRpc(_vendingMachineId, transform.position, transform.rotation);
+        yield return new WaitForSeconds(5f);
+        EnableEnemyMesh(true);
+                
+        callback?.Invoke();
     }
 
     private float GetDistanceToObjectInDirection(Vector3 direction, float maxDistance = 50f)
     {
         float distance = 0f;
-        if (Physics.Raycast(transform.position, direction, out RaycastHit hit, maxDistance, StartOfRound.Instance.collidersAndRoomMask))
+        if (Physics.Raycast(transform.position, direction, out RaycastHit hit, maxDistance, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
         {
             distance = hit.distance;
         }
@@ -547,12 +609,7 @@ public class VileVendingMachineServer : EnemyAI
         return doors[UnityEngine.Random.Range(0, doors.Length - 1)];
     }
 
-    public string GetId()
-    {
-        return _vendingMachineId;
-    }
-
-    private void VendingMachinePlacementFail()
+    private void PlacementFail()
     {
         LogDebug("Vending machine could not be placed");
         VendingMachineRegistry.IsPlacementInProgress = false;

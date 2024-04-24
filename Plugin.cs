@@ -22,7 +22,7 @@ namespace LethalCompanyVileVendingMachine
     {
         public const string ModGuid = $"LCM_VolatileVendingMachine|{ModVersion}";
         private const string ModName = "Lethal Company Volatile Vending Machine Mod";
-        private const string ModVersion = "1.0.3";
+        private const string ModVersion = "1.0.1";
 
         private readonly Harmony _harmony = new(ModGuid);
 
@@ -127,7 +127,6 @@ namespace LethalCompanyVileVendingMachine
         public readonly ConfigEntry<float> KillProbabilityGrowthFactor;
         public readonly ConfigEntry<float> KillProbabilityReductionFactor;
         
-        
         public readonly ConfigEntry<float> SoundEffectsVolume;
         
         public readonly ConfigEntry<int> ColaMaxValue;
@@ -168,7 +167,7 @@ namespace LethalCompanyVileVendingMachine
             CanSpawnAtFireExitMaster = cfg.Bind(
                 "Spawn Values",
                 "Can Spawn at Fire Exit",
-                true,
+                false,
                 "Whether the vending machine can spawn at a fire exit"
             );
             
@@ -234,6 +233,66 @@ namespace LethalCompanyVileVendingMachine
                 1f,
                 "The volume of the sound effects from the vending machine"
                 );
+        }
+    }
+    
+    
+    [Serializable]
+    public class SyncedInstance<T>
+    {
+        internal static CustomMessagingManager MessageManager => NetworkManager.Singleton.CustomMessagingManager;
+        internal static bool IsClient => NetworkManager.Singleton.IsClient;
+        internal static bool IsHost => NetworkManager.Singleton.IsHost;
+        
+        [NonSerialized]
+        protected static int IntSize = 4;
+
+        public static T Default { get; private set; }
+        public static T Instance { get; private set; }
+
+        public static bool Synced { get; internal set; }
+
+        protected void InitInstance(T instance) {
+            Default = instance;
+            Instance = instance;
+            
+            IntSize = sizeof(int);
+        }
+
+        internal static void SyncInstance(byte[] data) {
+            Instance = DeserializeFromBytes(data);
+            Synced = true;
+        }
+
+        internal static void RevertSync() {
+            Instance = Default;
+            Synced = false;
+        }
+
+        public static byte[] SerializeToBytes(T val) {
+            BinaryFormatter bf = new();
+            using MemoryStream stream = new();
+
+            try {
+                bf.Serialize(stream, val);
+                return stream.ToArray();
+            }
+            catch (Exception e) {
+                Debug.LogError($"Error serializing instance: {e}");
+                return null;
+            }
+        }
+
+        public static T DeserializeFromBytes(byte[] data) {
+            BinaryFormatter bf = new();
+            using MemoryStream stream = new(data);
+
+            try {
+                return (T) bf.Deserialize(stream);
+            } catch (Exception e) {
+                Debug.LogError($"Error deserializing instance: {e}");
+                return default;
+            }
         }
         
         private static void RequestSync() {
@@ -302,66 +361,6 @@ namespace LethalCompanyVileVendingMachine
         [HarmonyPatch(typeof(GameNetworkManager), "StartDisconnect")]
         public static void PlayerLeave() {
             RevertSync();
-        }
-    }
-    
-    
-    [Serializable]
-    public class SyncedInstance<T>
-    {
-        internal static CustomMessagingManager MessageManager => NetworkManager.Singleton.CustomMessagingManager;
-        internal static bool IsClient => NetworkManager.Singleton.IsClient;
-        internal static bool IsHost => NetworkManager.Singleton.IsHost;
-        
-        [NonSerialized]
-        protected static int IntSize = 4;
-
-        public static T Default { get; private set; }
-        public static T Instance { get; private set; }
-
-        public static bool Synced { get; internal set; }
-
-        protected void InitInstance(T instance) {
-            Default = instance;
-            Instance = instance;
-            
-            IntSize = sizeof(int);
-        }
-
-        internal static void SyncInstance(byte[] data) {
-            Instance = DeserializeFromBytes(data);
-            Synced = true;
-        }
-
-        internal static void RevertSync() {
-            Instance = Default;
-            Synced = false;
-        }
-
-        public static byte[] SerializeToBytes(T val) {
-            BinaryFormatter bf = new();
-            using MemoryStream stream = new();
-
-            try {
-                bf.Serialize(stream, val);
-                return stream.ToArray();
-            }
-            catch (Exception e) {
-                Debug.LogError($"Error serializing instance: {e}");
-                return null;
-            }
-        }
-
-        public static T DeserializeFromBytes(byte[] data) {
-            BinaryFormatter bf = new();
-            using MemoryStream stream = new(data);
-
-            try {
-                return (T) bf.Deserialize(stream);
-            } catch (Exception e) {
-                Debug.LogError($"Error deserializing instance: {e}");
-                return default;
-            }
         }
     }
     

@@ -27,6 +27,7 @@ public class CompanyColaBehaviour : PhysicsProp
     
     public bool isPartOfVendingMachine;
     public bool isPhysicsEnabled;
+    private bool _hasBeenPickedUp;
 
     private void Awake()
     {
@@ -105,6 +106,8 @@ public class CompanyColaBehaviour : PhysicsProp
         base.EquipItem();
         isPartOfVendingMachine = false;
         isPhysicsEnabled = false;
+
+        RemoveRigidbodyAndDoubleScanNodes();
     }
 
     public override void GrabItem()
@@ -112,7 +115,17 @@ public class CompanyColaBehaviour : PhysicsProp
         base.GrabItem();
         isPartOfVendingMachine = false;
         isPhysicsEnabled = false;
+        
+        RemoveRigidbodyAndDoubleScanNodes();
+    }
+
+    private void RemoveRigidbodyAndDoubleScanNodes()
+    {
+        if (_hasBeenPickedUp) return;
         if (IsOwner) Destroy(GetComponent<Rigidbody>());
+        Destroy(outerScanNode);
+
+        _hasBeenPickedUp = true;
     }
 
     public void UpdateScrapValue(int value)

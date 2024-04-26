@@ -98,7 +98,7 @@ public class VileVendingMachineClient : MonoBehaviour
     private void Start()
     {
         _mls = BepInEx.Logging.Logger.CreateLogSource(
-            $"{VileVendingMachinePlugin.ModGuid} | Volatile Vending Machine {_vendingMachineId}");
+            $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine {_vendingMachineId}");
     }
 
     private void Update()
@@ -390,8 +390,8 @@ public class VileVendingMachineClient : MonoBehaviour
     {
         if (_vendingMachineId != receivedVendingMachineId) return;
 
-        creatureVoiceSource.volume = VolatileVendingMachineConfig.Instance.SoundEffectsVolume.Value;
-        creatureSfxSource.volume = VolatileVendingMachineConfig.Instance.SoundEffectsVolume.Value;
+        creatureVoiceSource.volume = VileVendingMachineConfig.Instance.SoundEffectsVolume.Value;
+        creatureSfxSource.volume = VileVendingMachineConfig.Instance.SoundEffectsVolume.Value;
     }
 
     private void SetBool(string receivedVendingMachineId, int parameter, bool value)

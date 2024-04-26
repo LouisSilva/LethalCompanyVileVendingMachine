@@ -1,7 +1,7 @@
 # Vile Vending Machine
 ![Logo](https://i.imgur.com/LinyoYH.gif)
 
-Adds a new Entity and Scrap to Lethal Company.
+Adds a new Entity and 2 New Scrap to Lethal Company.
 Fully Compatible with v50
 
 
@@ -12,6 +12,19 @@ It's your own greed that will cause your death when interacting with it...
 You're given the opportunity to trade scrap for a unique item that's worth more then a regular Cola, The Company Cola, this comes at a high risk. The Vile Vending Machine has a chance to grab you, killing you and turning you into a Company Cola instead.
 
 Are you really willing to risk your life for a Cola...?
+
+![Logo](https://i.imgur.com/6KvkQEl.png)
+
+# New Scrap:
+
+The Company Cola
+
+![Logo](https://i.imgur.com/l4LItxo.png)
+
+Vile Vending Machine Plush
+
+![Logo](https://i.imgur.com/ZX31qSS.png)
+
 
 # Config Features:
 - Sound Effects Volume
@@ -28,8 +41,8 @@ Are you really willing to risk your life for a Cola...?
 
 Credit:
 - 3D Modeling, Textures, Animation and Sound Effects: MeatBallDemon
-	+ Twittter: ( https://twitter.com/_MeatBallDemon_ )
-	+ Discord Server: ( https://discord.gg/wbbuGE2YJC )
+	+ Twittter: https://twitter.com/M3ATBALLD3MON
+	+ Discord Server: https://discord.gg/wbbuGE2YJC
 
 - Programming: Louis Silva
 	+ Github: https://github.com/LouisSilva

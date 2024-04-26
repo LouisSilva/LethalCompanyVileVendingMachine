@@ -17,13 +17,14 @@ namespace LethalCompanyVileVendingMachine;
 
 [BepInPlugin(PluginInfo.PLUGIN_GUID, PluginInfo.PLUGIN_NAME, PluginInfo.PLUGIN_VERSION)]
 [BepInDependency(LethalLib.Plugin.ModGUID)]
+// [BepInDependency(PlushieItemBehaviourPlugin.ModGuid)]
 [BepInDependency("linkoid-DissonanceLagFix-1.0.0", BepInDependency.DependencyFlags.SoftDependency)]
 [BepInDependency("mattymatty-AsyncLoggers-1.6.2", BepInDependency.DependencyFlags.SoftDependency)]
 public class VileVendingMachinePlugin : BaseUnityPlugin
 {
-    public const string ModGuid = $"LCM_VolatileVendingMachine|{ModVersion}";
-    private const string ModName = "Lethal Company Volatile Vending Machine Mod";
-    private const string ModVersion = "1.0.2";
+    public const string ModGuid = $"LCM_VileVendingMachine|{ModVersion}";
+    private const string ModName = "Lethal Company Vile Vending Machine Mod";
+    private const string ModVersion = "1.0.3";
 
     private readonly Harmony _harmony = new(ModGuid);
 
@@ -31,11 +32,12 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
 
     private static VileVendingMachinePlugin _instance;
         
-    public static VolatileVendingMachineConfig VolatileVendingMachineConfig { get; internal set; }
+    public static VileVendingMachineConfig VileVendingMachineConfig { get; internal set; }
 
-    private static EnemyType _volatileVendingMachineEnemyType;
+    private static EnemyType _vileVendingMachineEnemyType;
 
     public static Item CompanyColaItem;
+    private static Item _plushieItem;
         
     private void Awake()
     {
@@ -51,32 +53,33 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
         }
             
         _harmony.PatchAll();
-        VolatileVendingMachineConfig = new VolatileVendingMachineConfig(Config);
+        VileVendingMachineConfig = new VileVendingMachineConfig(Config);
 
-        SetupVolatileVendingMachine();
+        SetupVileVendingMachine();
         SetupCompanyCola();
+        SetupPlushie();
             
         _harmony.PatchAll(typeof(VileVendingMachinePlugin));
         Mls.LogInfo($"Plugin {ModName} is loaded!");
     }
 
-    private void SetupVolatileVendingMachine()
+    private void SetupVileVendingMachine()
     {
-        _volatileVendingMachineEnemyType = Assets.MainAssetBundle.LoadAsset<EnemyType>("VolatileVendingMachine");
-        _volatileVendingMachineEnemyType.MaxCount = VolatileVendingMachineConfig.Instance.MaxAmount.Value;
+        _vileVendingMachineEnemyType = Assets.MainAssetBundle.LoadAsset<EnemyType>("VileVendingMachine");
+        _vileVendingMachineEnemyType.MaxCount = VileVendingMachineConfig.Instance.MaxAmount.Value;
             
-        TerminalNode volatileVendingMachineTerminalNode = Assets.MainAssetBundle.LoadAsset<TerminalNode>("VolatileVendingMachineTN");
-        TerminalKeyword volatileVendingMachineTerminalKeyword = Assets.MainAssetBundle.LoadAsset<TerminalKeyword>("VolatileVendingMachineTK");
+        TerminalNode vileVendingMachineTerminalNode = Assets.MainAssetBundle.LoadAsset<TerminalNode>("VileVendingMachineTN");
+        TerminalKeyword vileVendingMachineTerminalKeyword = Assets.MainAssetBundle.LoadAsset<TerminalKeyword>("VileVendingMachineTK");
 
-        NetworkPrefabs.RegisterNetworkPrefab(_volatileVendingMachineEnemyType.enemyPrefab);
-        Utilities.FixMixerGroups(_volatileVendingMachineEnemyType.enemyPrefab);
+        NetworkPrefabs.RegisterNetworkPrefab(_vileVendingMachineEnemyType.enemyPrefab);
+        Utilities.FixMixerGroups(_vileVendingMachineEnemyType.enemyPrefab);
         Enemies.RegisterEnemy(
-            _volatileVendingMachineEnemyType,
-            Mathf.Clamp(VolatileVendingMachineConfig.Instance.SpawnRate.Value, 0, 999),
-            VolatileVendingMachineConfig.Instance.SpawnLevelTypes.Value,
+            _vileVendingMachineEnemyType,
+            Mathf.Clamp(VileVendingMachineConfig.Instance.SpawnRate.Value, 0, 999),
+            VileVendingMachineConfig.Instance.SpawnLevelTypes.Value,
             Enemies.SpawnType.Default,
-            volatileVendingMachineTerminalNode,
-            volatileVendingMachineTerminalKeyword
+            vileVendingMachineTerminalNode,
+            vileVendingMachineTerminalKeyword
         );
     }
 
@@ -92,6 +95,23 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
         NetworkPrefabs.RegisterNetworkPrefab(CompanyColaItem.spawnPrefab);
         Utilities.FixMixerGroups(CompanyColaItem.spawnPrefab);
         Items.RegisterScrap(CompanyColaItem, 0, Levels.LevelTypes.All);
+    }
+
+    private void SetupPlushie()
+    {
+        _plushieItem = Assets.MainAssetBundle.LoadAsset<Item>("VileVendingMachinePlushieItemData");
+        if (_plushieItem == null)
+        {
+            Mls.LogError("Failed to load VileVendingMachinePlushieItemData from AssetBundle");
+            return;
+        }
+        
+        _plushieItem.minValue = Mathf.Clamp(VileVendingMachineConfig.Instance.PlushieMinValue.Value, 0, int.MaxValue);
+        _plushieItem.maxValue = Mathf.Clamp(VileVendingMachineConfig.Instance.PlushieMaxValue.Value, 0, int.MaxValue);
+            
+        NetworkPrefabs.RegisterNetworkPrefab(_plushieItem.spawnPrefab);
+        Utilities.FixMixerGroups(_plushieItem.spawnPrefab);
+        Items.RegisterScrap(_plushieItem, Mathf.Clamp(VileVendingMachineConfig.Instance.PlushieSpawnRate.Value, 0, int.MaxValue), VileVendingMachineConfig.Instance.PlushieSpawnLevel.Value);
     }
         
     private static void InitializeNetworkStuff()
@@ -112,7 +132,7 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
     }
 }
 
-public class VolatileVendingMachineConfig : SyncedInstance<VolatileVendingMachineConfig>
+public class VileVendingMachineConfig : SyncedInstance<VileVendingMachineConfig>
 {
     // Spawn values
     public readonly ConfigEntry<int> SpawnRate;
@@ -132,62 +152,66 @@ public class VolatileVendingMachineConfig : SyncedInstance<VolatileVendingMachin
         
     public readonly ConfigEntry<int> ColaMaxValue;
     public readonly ConfigEntry<int> ColaMinValue;
+    public readonly ConfigEntry<int> PlushieMaxValue;
+    public readonly ConfigEntry<int> PlushieMinValue;
+    public readonly ConfigEntry<int> PlushieSpawnRate;
+    public readonly ConfigEntry<Levels.LevelTypes> PlushieSpawnLevel;
 
-    public VolatileVendingMachineConfig(ConfigFile cfg)
+    public VileVendingMachineConfig(ConfigFile cfg)
     {
         InitInstance(this);
             
         SpawnRate = cfg.Bind(
-            "Spawn Values",
+            "Vending Machine Spawn Values",
             "Spawn Rate",
             20,
             "The spawn rate of the vending machine"
         );
             
         MaxAmount = cfg.Bind(
-            "Spawn Values",
+            "Vending Machine Spawn Values",
             "Max Amount",
             1,
             "The max amount of vending machines"
         );
             
         SpawnLevelTypes = cfg.Bind(
-            "Spawn Values",
+            "Vending Machine Spawn Values",
             "Spawn Level",
             Levels.LevelTypes.All,
             "The LevelTypes that the vending machine spawns in"
         );
 
         CanSpawnAtMainDoorMaster = cfg.Bind(
-            "Spawn Values",
+            "Vending Machine Spawn Values",
             "Can Spawn at Main Entrance",
             true,
             "Whether the vending machine can spawn at the main entrance"
         );
             
         CanSpawnAtFireExitMaster = cfg.Bind(
-            "Spawn Values",
+            "Vending Machine Spawn Values",
             "Can Spawn at Fire Exit",
             false,
             "Whether the vending machine can spawn at a fire exit"
         );
             
         CanSpawnOutsideMaster = cfg.Bind(
-            "Spawn Values",
+            "Vending Machine Spawn Values",
             "Can Spawn Outside",
             true,
             "Whether the vending machine can spawn outside"
         );
             
         CanSpawnInsideMaster = cfg.Bind(
-            "Spawn Values",
+            "Vending Machine Spawn Values",
             "Can Spawn Inside",
             true,
             "Whether the vending machine can spawn inside the dungeon"
         );
             
         AlwaysSpawnOutsideMainEntrance = cfg.Bind(
-            "Spawn Values",
+            "Vending Machine Spawn Values",
             "Always Spawn At Main Entrance First",
             true,
             "Whether a vending machine should always try to spawn outside the main entrance first, before considering fire exits or spawning inside the dungeon"
@@ -215,17 +239,45 @@ public class VolatileVendingMachineConfig : SyncedInstance<VolatileVendingMachin
         );
             
         ColaMinValue = cfg.Bind(
-            "Spawn Values",
+            "Item Spawn Values",
             "Company Cola Minimum Value",
             60,
             "The minimum possible value of a company cola"
         );
             
         ColaMaxValue = cfg.Bind(
-            "Spawn Values",
+            "Item Spawn Values",
             "Company Cola Maximum Value",
             90,
             "The maximum possible value of a company cola"
+        );
+        
+        PlushieMinValue = cfg.Bind(
+            "Item Spawn Values",
+            "Vile Vending Machine Plushie Minimum value",
+            30,
+            "The minimum value that the Vile Vending Machine Plushie can be set to"
+        );
+        
+        PlushieMaxValue = cfg.Bind(
+            "Item Spawn Values",
+            "Vile Vending Machine Plushie Maximum value",
+            75,
+            "The maximum value that the Vile Vending Machine Plushie can be set to"
+        );
+        
+        PlushieSpawnRate = cfg.Bind(
+            "Item Spawn Values",
+            "Vile Vending Machine Plushie Spawn Value",
+            5,
+            "The weighted spawn rarity of the Vile Vending Machine Plushie"
+        );
+        
+        PlushieSpawnLevel = cfg.Bind(
+            "Item Spawn Values",
+            "Vile Vending Machine Plushie Spawn Level",
+            Levels.LevelTypes.All,
+            "The LevelTypes that the Vile Vending Machine Plushie spawns in"
         );
 
         SoundEffectsVolume = cfg.Bind(
@@ -385,7 +437,7 @@ internal static class Assets
 
         if (MainAssetBundle == null)
         {
-            VileVendingMachinePlugin.Mls.LogError("Failed to load Dalek bundle");
+            VileVendingMachinePlugin.Mls.LogError("Failed to load vilevendingmachine bundle");
         }
     }
 }

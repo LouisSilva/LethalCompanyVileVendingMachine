@@ -19,7 +19,7 @@ public enum EntranceOrExit
 
 public static class VendingMachineRegistry
 {
-    private static readonly ManualLogSource Mls = new($"{VileVendingMachinePlugin.ModGuid} | Volatile Vending Machine Registry");
+    private static readonly ManualLogSource Mls = new($"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine Registry");
     
     public struct VendingMachinePlacement
     {

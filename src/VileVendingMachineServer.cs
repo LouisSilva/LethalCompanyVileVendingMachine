@@ -103,9 +103,9 @@ public class VileVendingMachineServer : EnemyAI
         netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
         netcodeController.OnSpawnCola += HandleSpawnCola;
 
-        initialKillProbability = VolatileVendingMachineConfig.Instance.InitialKillProbability.Value;
-        killProbabilityGrowthFactor = VolatileVendingMachineConfig.Instance.KillProbabilityGrowthFactor.Value;
-        killProbabilityReductionFactor = VolatileVendingMachineConfig.Instance.KillProbabilityReductionFactor.Value;
+        initialKillProbability = VileVendingMachineConfig.Instance.InitialKillProbability.Value;
+        killProbabilityGrowthFactor = VileVendingMachineConfig.Instance.KillProbabilityGrowthFactor.Value;
+        killProbabilityReductionFactor = VileVendingMachineConfig.Instance.KillProbabilityReductionFactor.Value;
 
         triggerScript = GetComponentInChildren<InteractTrigger>();
         triggerScript.onInteract.AddListener(InteractVendingMachine);
@@ -161,28 +161,28 @@ public class VileVendingMachineServer : EnemyAI
         EntranceTeleport[] doors = GetDoorTeleports();
         
         // Shuffle the doors
-        if (!VolatileVendingMachineConfig.Instance.AlwaysSpawnOutsideMainEntrance.Value)
+        if (!VileVendingMachineConfig.Instance.AlwaysSpawnOutsideMainEntrance.Value)
             doors = doors.OrderBy(x => UnityEngine.Random.Range(int.MinValue, int.MaxValue)).ToArray();
         
         // Loops over all the doors on the outside, and inside the dungeon. The i values correspond to the EntranceOrExit enum
         for (int i = 0; i < 2; i++)
         {
             // Checks if a vending machine can spawn outside
-            if (!VolatileVendingMachineConfig.Instance.CanSpawnOutsideMaster.Value && i == (int)EntranceOrExit.Entrance)
+            if (!VileVendingMachineConfig.Instance.CanSpawnOutsideMaster.Value && i == (int)EntranceOrExit.Entrance)
                 continue;
 
             // Checks if a vending machine can spawn inside the dungeon
-            if (!VolatileVendingMachineConfig.Instance.CanSpawnInsideMaster.Value && i == (int)EntranceOrExit.Exit)
+            if (!VileVendingMachineConfig.Instance.CanSpawnInsideMaster.Value && i == (int)EntranceOrExit.Exit)
                 continue;
             
             foreach (EntranceTeleport door in doors)
             {
                 // Checks if a vending machine can spawn at the main door, inside or outside
-                if (!VolatileVendingMachineConfig.Instance.CanSpawnAtMainDoorMaster.Value && door.entranceId == 0)
+                if (!VileVendingMachineConfig.Instance.CanSpawnAtMainDoorMaster.Value && door.entranceId == 0)
                     continue;
 
                 // Checks if a vending machine can spawn at a fire exit, inside or outside
-                if (!VolatileVendingMachineConfig.Instance.CanSpawnAtFireExitMaster.Value && door.entranceId != 0)
+                if (!VileVendingMachineConfig.Instance.CanSpawnAtFireExitMaster.Value && door.entranceId != 0)
                     continue;
 
                 // Checks if a vending machine is blacklisted from spawning outside a fire exit on a certain map (to save time)
@@ -309,7 +309,17 @@ public class VileVendingMachineServer : EnemyAI
         VendingMachineRegistry.IsPlacementInProgress = false;
         netcodeController.PlayMaterializeVfxClientRpc(_vendingMachineId, transform.position, transform.rotation);
         yield return new WaitForSeconds(5f);
-        EnableEnemyMesh(true);
+        
+        // Needed try block because of the imperium mod bug
+        try
+        {
+            EnableEnemyMesh(true);
+        }
+        catch (NullReferenceException)
+        {
+            _mls.LogWarning("The EnableEnemyMesh function failed");
+        }
+        
         agent.enabled = false;
                 
         callback?.Invoke();
@@ -382,8 +392,8 @@ public class VileVendingMachineServer : EnemyAI
         colaBehaviour.isPhysicsEnabled = true;
         colaBehaviour.grabbableToEnemies = false;
         int colaScrapValue = UnityEngine.Random.Range(
-            VolatileVendingMachineConfig.Instance.ColaMinValue.Value, 
-            VolatileVendingMachineConfig.Instance.ColaMaxValue.Value + 1);
+            VileVendingMachineConfig.Instance.ColaMinValue.Value, 
+            VileVendingMachineConfig.Instance.ColaMaxValue.Value + 1);
         
         colaObject.GetComponent<GrabbableObject>().fallTime = 1f;
         colaObject.GetComponent<GrabbableObject>().SetScrapValue(colaScrapValue);

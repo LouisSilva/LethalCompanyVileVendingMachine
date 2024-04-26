@@ -29,7 +29,7 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     private void Start()
     {
         _mls = Logger.CreateLogSource(
-            $"{VileVendingMachinePlugin.ModGuid} | Volatile Vending Machine Netcode Controller");
+            $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine Netcode Controller");
     }
 
     [ClientRpc]

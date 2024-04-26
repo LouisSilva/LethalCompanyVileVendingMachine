@@ -25,11 +25,25 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     public event Action<string, Vector3, Quaternion> OnPlayMaterializeVfx;
     public event Action<string, int, bool> OnPlayCreatureSfx;
     public event Action<string> OnIncreaseFearLevelWhenPlayerBlended;
+    public event Action<string, bool> OnSetIsItemOnHand;
+    public event Action<string> OnStartAcceptItemAnimation;
 
     private void Start()
     {
         _mls = Logger.CreateLogSource(
             $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine Netcode Controller");
+    }
+    
+    [ServerRpc(RequireOwnership = false)]
+    public void StartAcceptItemAnimationServerRpc(string receivedVendingMachineId)
+    {
+        OnStartAcceptItemAnimation?.Invoke(receivedVendingMachineId);
+    }
+
+    [ClientRpc]
+    public void SetIsItemOnHandClientRpc(string receivedVendingMachineId, bool isItemOnHand)
+    {
+        OnSetIsItemOnHand?.Invoke(receivedVendingMachineId, isItemOnHand);
     }
 
     [ClientRpc]

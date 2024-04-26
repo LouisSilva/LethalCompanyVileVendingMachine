@@ -3,7 +3,6 @@ using BepInEx.Logging;
 using GameNetcodeStuff;
 using Unity.Netcode;
 using UnityEngine;
-using UnityEngine.Serialization;
 using UnityEngine.VFX;
 using Logger = UnityEngine.Logger;
 
@@ -29,6 +28,7 @@ public class VileVendingMachineClient : MonoBehaviour
     [SerializeField] private Transform handBone;
     [SerializeField] private Transform itemHolder;
     [SerializeField] private Transform eye;
+    [SerializeField] private Transform colaPlaceholder;
 
     [Header("Controllers")] [Space(5f)] 
     [SerializeField] private VileVendingMachineNetcodeController netcodeController;
@@ -56,7 +56,7 @@ public class VileVendingMachineClient : MonoBehaviour
     private const string DepositText = "Placing item...";
     private const string NoItemsText = "No items to place...";
 
-    private bool _itemInHand;
+    private bool _isItemOnHand;
     private bool _increasingFearLevel;
 
     private PlayerControllerB _targetPlayer;
@@ -77,6 +77,7 @@ public class VileVendingMachineClient : MonoBehaviour
         netcodeController.OnPlayMaterializeVfx += HandlePlayMaterializeVfx;
         netcodeController.OnPlayCreatureSfx += HandlePlayCreatureSfx;
         netcodeController.OnIncreaseFearLevelWhenPlayerBlended += HandleIncreaseFearLevelWhenPlayerBlended;
+        netcodeController.OnSetIsItemOnHand += HandleSetIsItemOnHand;
     }
 
     private void OnDestroy()
@@ -93,17 +94,42 @@ public class VileVendingMachineClient : MonoBehaviour
         netcodeController.OnPlayMaterializeVfx -= HandlePlayMaterializeVfx;
         netcodeController.OnPlayCreatureSfx -= HandlePlayCreatureSfx;
         netcodeController.OnIncreaseFearLevelWhenPlayerBlended -= HandleIncreaseFearLevelWhenPlayerBlended;
+        netcodeController.OnSetIsItemOnHand -= HandleSetIsItemOnHand;
     }
 
     private void Start()
     {
         _mls = BepInEx.Logging.Logger.CreateLogSource(
             $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine {_vendingMachineId}");
+        
+        triggerScript = GetComponentInChildren<InteractTrigger>();
+        triggerScript.onInteract.AddListener(InteractVendingMachine);
+        triggerScript.tag = nameof(InteractTrigger);
+        triggerScript.interactCooldown = false;
+        triggerScript.cooldownTime = 0;
     }
 
     private void Update()
     {
         UpdateInteractTriggers();
+    }
+    
+    private void InteractVendingMachine(PlayerControllerB playerInteractor)
+    {
+        if (GameNetworkManager.Instance.localPlayerController != playerInteractor) return;
+        if (!playerInteractor.isHoldingObject) return;
+        PlaceItemInHand(ref playerInteractor);
+    }
+    
+    private void PlaceItemInHand(ref PlayerControllerB playerInteractor)
+    {
+        if (_isItemOnHand) return;
+        _targetPlayer = playerInteractor;
+        if (GameNetworkManager.Instance == null) return;
+
+        _isItemOnHand = true;
+        HandlePlayerDiscardHeldItem(_vendingMachineId, (int)playerInteractor.actualClientId);
+        if (GameNetworkManager.Instance.localPlayerController == playerInteractor) netcodeController.StartAcceptItemAnimationServerRpc(_vendingMachineId);
     }
 
     private void HandleIncreaseFearLevelWhenPlayerBlended(string receivedVendingMachineId)
@@ -170,7 +196,7 @@ public class VileVendingMachineClient : MonoBehaviour
     private void HandlePlayerDiscardHeldItem(string receivedVendingMachineId, int playerClientId)
     {
         if (_vendingMachineId != receivedVendingMachineId) return;
-        _itemInHand = true;
+        _isItemOnHand = true;
         if (GameNetworkManager.Instance.localPlayerController != StartOfRound.Instance.allPlayerScripts[playerClientId])
             return;
         
@@ -198,7 +224,7 @@ public class VileVendingMachineClient : MonoBehaviour
         item.isHeldByEnemy = true;
         item.grabbable = false;
         item.grabbableToEnemies = false;
-        _itemInHand = true;
+        _isItemOnHand = true;
         
         item.EnablePhysics(false);
         item.transform.SetParent(itemHolder);
@@ -275,7 +301,7 @@ public class VileVendingMachineClient : MonoBehaviour
     public void OnAnimationEventEnableColaPhysics()
     {
         PlaySfx(flapCreakFullSfx);
-        _itemInHand = false;
+        _isItemOnHand = false;
         
         CompanyColaBehaviour cola = _cola.GetComponent<CompanyColaBehaviour>();
         cola.grabbable = true;
@@ -306,7 +332,7 @@ public class VileVendingMachineClient : MonoBehaviour
             return;
         }
 
-        if (_itemInHand)
+        if (_isItemOnHand)
         {
             SetInteractTriggers(false, "");
             return;
@@ -367,11 +393,23 @@ public class VileVendingMachineClient : MonoBehaviour
     {
         if (_vendingMachineId != receivedVendingMachineId) return;
         if (!colaNetworkObjectReference.TryGet(out NetworkObject colaNetworkObject)) return;
+        LogDebug("Cola network object reference was not null");
         _cola = colaNetworkObject;
-        LogDebug("Cola network reference was not null yay");
+        _cola.transform.SetParent(colaPlaceholder);
 
         CompanyColaBehaviour colaBehaviour = _cola.GetComponent<CompanyColaBehaviour>();
         colaBehaviour.UpdateScrapValue(colaValue);
+        colaBehaviour.SetScrapValue(colaValue);
+        colaBehaviour.isPartOfVendingMachine = true;
+        colaBehaviour.isPhysicsEnabled = true;
+        colaBehaviour.grabbableToEnemies = false;
+        colaBehaviour.fallTime = 1f;
+    }
+
+    private void HandleSetIsItemOnHand(string receivedVendingMachineId, bool isItemOnHand)
+    {
+        if (_vendingMachineId != receivedVendingMachineId) return;
+        _isItemOnHand = isItemOnHand;
     }
     
     private void HandleChangeTargetPlayer(string receivedVendingMachineId, int playerClientId)
@@ -409,6 +447,9 @@ public class VileVendingMachineClient : MonoBehaviour
     private void HandleUpdateVendingMachineIdentifier(string receivedVendingMachineId)
     {
         _vendingMachineId = receivedVendingMachineId;
+        _mls?.Dispose();
+        _mls = BepInEx.Logging.Logger.CreateLogSource(
+            $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine {_vendingMachineId}");
     }
 
     private void LogDebug(string msg)

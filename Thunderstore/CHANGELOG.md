@@ -1,3 +1,9 @@
+## 1.0.4
+* Fixed plushie having the wrong icon in the toolbar.
+* Fixed clients not being able to place an item on the hand.
+* Fixed bug where the cola wasn't being animated properly out the flap.
+* Fixed other very small bugs.
+
 ## 1.0.3
 * Added a plushie.
 * Gave the vending machine a higher chance of spawning earlier on in the day.

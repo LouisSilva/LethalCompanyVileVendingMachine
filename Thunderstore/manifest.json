@@ -1,7 +1,7 @@
 {
 	"name": "VileVendingMachine",
-	"version_number": "1.0.3",
-	"website_url": "",
+	"version_number": "1.0.4",
+	"website_url": "https://github.com/LouisSilva/LethalCompanyVolatileVendingMachine",
 	"description": "Adds a new Entity The Vile Vending Machine and new Scrap The Company Cola.",
 	"dependencies": [
 		"BepInEx-BepInExPack-5.4.2100",

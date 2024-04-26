@@ -122,7 +122,7 @@ public class CompanyColaBehaviour : PhysicsProp
     private void RemoveRigidbodyAndDoubleScanNodes()
     {
         if (_hasBeenPickedUp) return;
-        if (IsOwner) Destroy(GetComponent<Rigidbody>());
+        Destroy(GetComponent<Rigidbody>());
         Destroy(outerScanNode);
 
         _hasBeenPickedUp = true;

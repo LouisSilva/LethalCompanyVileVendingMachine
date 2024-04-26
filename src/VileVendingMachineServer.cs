@@ -40,8 +40,6 @@ public class VileVendingMachineServer : EnemyAI
     
     private ManualLogSource _mls;
     private string _vendingMachineId;
-    
-    private bool _isItemOnHand = false;
 
     [Header("AI")]
     [Space(5f)]
@@ -64,8 +62,7 @@ public class VileVendingMachineServer : EnemyAI
         | 1 << 23
         );
 
-    [Header("Colliders and Transforms")]
-    [Space(5f)]
+    [Header("Colliders and Transforms")] [Space(5f)]
 #pragma warning disable 0649
     [SerializeField] private BoxCollider mainCollider;
     [SerializeField] private BoxCollider frontCollider;
@@ -74,9 +71,7 @@ public class VileVendingMachineServer : EnemyAI
     [SerializeField] private Transform colaPlaceholder;
     [SerializeField] private Transform itemHolder;
     
-    [Header("Controllers")]
-    [Space(5f)]
-    [SerializeField] private InteractTrigger triggerScript;
+    [Header("Controllers")] [Space(5f)]
     [SerializeField] private VileVendingMachineNetcodeController netcodeController;
 #pragma warning restore 0649
 
@@ -84,6 +79,7 @@ public class VileVendingMachineServer : EnemyAI
     {
         netcodeController.OnDespawnHeldItem -= HandleDespawnHeldItem;
         netcodeController.OnSpawnCola -= HandleSpawnCola;
+        netcodeController.OnStartAcceptItemAnimation -= HandleStartAcceptItemAnimation;
         
         VendingMachineRegistry.RemoveVendingMachine(_vendingMachineId);
     }
@@ -95,23 +91,18 @@ public class VileVendingMachineServer : EnemyAI
 
         _vendingMachineId = Guid.NewGuid().ToString();
         _mls = Logger.CreateLogSource(
-            $"{VileVendingMachinePlugin.ModGuid} | Volatile Vending Machine Server {_vendingMachineId}");
+            $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine Server {_vendingMachineId}");
         
         UnityEngine.Random.InitState(StartOfRound.Instance.randomMapSeed + _vendingMachineId.GetHashCode());
 
         netcodeController.UpdateVendingMachineIdClientRpc(_vendingMachineId);
         netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
         netcodeController.OnSpawnCola += HandleSpawnCola;
+        netcodeController.OnStartAcceptItemAnimation += HandleStartAcceptItemAnimation;
 
         initialKillProbability = VileVendingMachineConfig.Instance.InitialKillProbability.Value;
         killProbabilityGrowthFactor = VileVendingMachineConfig.Instance.KillProbabilityGrowthFactor.Value;
         killProbabilityReductionFactor = VileVendingMachineConfig.Instance.KillProbabilityReductionFactor.Value;
-
-        triggerScript = GetComponentInChildren<InteractTrigger>();
-        triggerScript.onInteract.AddListener(InteractVendingMachine);
-        triggerScript.tag = nameof(InteractTrigger);
-        triggerScript.interactCooldown = false;
-        triggerScript.cooldownTime = 0;
 
         agent.updateRotation = false;
         agent.updatePosition = false;
@@ -273,8 +264,11 @@ public class VileVendingMachineServer : EnemyAI
                 }
 
                 // Move vending machine to the left or right
-                // DrawDebugLineAtTransformWithDirection(transform, -transform.right);
-                // DrawDebugLineAtTransformWithDirection(transform, transform.right);
+                DrawDebugLineAtTransformWithDirection(transform, -transform.right, new Color(0, 255, 0));
+                DrawDebugLineAtTransformWithDirection(transform, transform.right, new Color(255, 0, 0));
+                DrawDebugCircleAtPosition(transform.right, new Color(255, 0, 0));
+                DrawDebugCircleAtPosition(-transform.right, new Color(0, 255, 0));
+                DrawDebugHorizontalLineAtTransform(transform, new Color(0, 0, 255));
                 float leftDistance = GetDistanceToObjectInDirection(-transform.right, 30f);
                 float rightDistance = GetDistanceToObjectInDirection(transform.right, 30f);
 
@@ -328,6 +322,7 @@ public class VileVendingMachineServer : EnemyAI
     private float GetDistanceToObjectInDirection(Vector3 direction, float maxDistance = 50f)
     {
         float distance = 0f;
+        LogDebug($"Transform position: {transform.position.ToString()}");
         if (Physics.Raycast(transform.position, direction, out RaycastHit hit, maxDistance, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
         {
             distance = hit.distance;
@@ -368,18 +363,6 @@ public class VileVendingMachineServer : EnemyAI
         if (!IsServer) return;
         if (receivedVendingMachineId != _vendingMachineId) return;
         
-        /*
-        GameObject colaObject = Instantiate(
-            testColaPrefab,
-            colaPlaceholder.position,
-            colaPlaceholder.rotation,
-            colaPlaceholder);
-        
-        colaObject.GetComponent<NetworkObject>().Spawn();
-        colaObject.GetComponent<Transform>().SetParent(colaPlaceholder);
-        netcodeController.UpdateColaNetworkObjectReferenceClientRpc(_vendingMachineId, colaObject.GetComponent<NetworkObject>());
-        */
-        
         GameObject colaObject = Instantiate(
             VileVendingMachinePlugin.CompanyColaItem.spawnPrefab,
             colaPlaceholder.position,
@@ -388,21 +371,23 @@ public class VileVendingMachineServer : EnemyAI
 
         CompanyColaBehaviour colaBehaviour = colaObject.GetComponent<CompanyColaBehaviour>();
         if (colaBehaviour == null) _mls.LogError("colaBehaviour is null");
+        
         colaBehaviour.isPartOfVendingMachine = true;
         colaBehaviour.isPhysicsEnabled = true;
         colaBehaviour.grabbableToEnemies = false;
+        colaBehaviour.fallTime = 1f;
         int colaScrapValue = UnityEngine.Random.Range(
             VileVendingMachineConfig.Instance.ColaMinValue.Value, 
             VileVendingMachineConfig.Instance.ColaMaxValue.Value + 1);
         
-        colaObject.GetComponent<GrabbableObject>().fallTime = 1f;
-        colaObject.GetComponent<GrabbableObject>().SetScrapValue(colaScrapValue);
+        colaBehaviour.SetScrapValue(colaScrapValue);
         colaBehaviour.UpdateScrapValue(colaScrapValue);
         RoundManager.Instance.totalScrapValueInLevel += colaScrapValue;
+
+        NetworkObject colaNetworkObject = colaObject.GetComponent<NetworkObject>();
+        colaNetworkObject.Spawn();
         
-        colaObject.GetComponent<NetworkObject>().Spawn();
-        colaObject.GetComponent<Transform>().SetParent(colaPlaceholder);
-        netcodeController.UpdateColaNetworkObjectReferenceClientRpc(_vendingMachineId, colaObject.GetComponent<NetworkObject>(), colaScrapValue);
+        netcodeController.UpdateColaNetworkObjectReferenceClientRpc(_vendingMachineId, colaNetworkObject, colaScrapValue);
     }
 
     private void HandleDespawnHeldItem(string receivedVendingMachineId)
@@ -422,24 +407,7 @@ public class VileVendingMachineServer : EnemyAI
             grabbableObject.Despawn();
         }
 
-        _isItemOnHand = false;
-    }
-    
-    private void InteractVendingMachine(PlayerControllerB playerInteractor)
-    {
-        if (!playerInteractor.isHoldingObject) return;
-        PlaceItemInHand(ref playerInteractor);
-    }
-    
-    private void PlaceItemInHand(ref PlayerControllerB playerInteractor)
-    {
-        if (_isItemOnHand || GameNetworkManager.Instance == null) return;
-
-        _isItemOnHand = true;
-        netcodeController.ChangeTargetPlayerClientRpc(_vendingMachineId, (int)playerInteractor.actualClientId);
-        netcodeController.PlayerDiscardHeldObjectClientRpc(_vendingMachineId, (int)playerInteractor.actualClientId);
-        
-        StartCoroutine(AcceptItem());
+        netcodeController.SetIsItemOnHandClientRpc(_vendingMachineId, false);
     }
 
     private IEnumerator AcceptItem()
@@ -473,7 +441,7 @@ public class VileVendingMachineServer : EnemyAI
         yield return new WaitForSeconds(2);
         
         netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.ArmAccept);
-        _isItemOnHand = false;
+        netcodeController.SetIsItemOnHandClientRpc(_vendingMachineId, false);
     }
     
     private static bool IsColliderAgainstWall(Collider collider)
@@ -540,7 +508,7 @@ public class VileVendingMachineServer : EnemyAI
             RoundManager.Instance.dungeonGenerator.Generator.DungeonFlow.name == dungeonName);
     }
     
-    private void DrawDebugHorizontalLineAtTransform(Transform transform, Color colour = new())
+    private void DrawDebugHorizontalLineAtTransform(Transform transform, Color colour = default)
     {
         GameObject lineObj = new("ForwardLine");
         lineObj.transform.position = transform.position;
@@ -557,7 +525,7 @@ public class VileVendingMachineServer : EnemyAI
         lineRenderer.SetPosition(1, transform.position + transform.right * 5);
     }
     
-    private void DrawDebugLineAtTransformWithDirection(Transform transform, Vector3 direction, Color colour = new())
+    private void DrawDebugLineAtTransformWithDirection(Transform transform, Vector3 direction, Color colour = default)
     {
         GameObject lineObj = new("ForwardLine");
         lineObj.transform.position = transform.position;
@@ -585,7 +553,7 @@ public class VileVendingMachineServer : EnemyAI
         lineRenderer.SetPosition(3, lineEnd + right * arrowHeadLength);
     }
     
-    private void DrawDebugCircleAtPosition(Vector3 position)
+    private void DrawDebugCircleAtPosition(Vector3 position, Color color = default)
     {
         float angle = 20f;
         const float circleRadius = 2f;
@@ -597,6 +565,8 @@ public class VileVendingMachineServer : EnemyAI
         lineRenderer.widthMultiplier = 0.1f;
         lineRenderer.positionCount = 51;
         lineRenderer.useWorldSpace = true;
+        lineRenderer.startColor = color;
+        lineRenderer.endColor = color;
         
         
         for (int i = 0; i <= 50; i++)
@@ -628,6 +598,12 @@ public class VileVendingMachineServer : EnemyAI
         LogDebug("Vending machine could not be placed");
         VendingMachineRegistry.IsPlacementInProgress = false;
         KillEnemyClientRpc(true);
+    }
+
+    private void HandleStartAcceptItemAnimation(string receivedVendingMachineId)
+    {
+        if (_vendingMachineId != receivedVendingMachineId) return;
+        StartCoroutine(AcceptItem());
     }
     
     private void LogDebug(string msg)

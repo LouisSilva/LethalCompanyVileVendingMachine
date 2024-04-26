@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using BepInEx.Logging;
-using GameNetcodeStuff;
 using Unity.Netcode;
 using UnityEngine;
 using Logger = BepInEx.Logging.Logger;
@@ -37,6 +36,12 @@ public class VileVendingMachineServer : EnemyAI
             new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Left, new Vector3(-41.011f, 47.738f, 4.101f), Quaternion.Euler(0, 90, 0)),
             new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Right, Vector3.zero, Quaternion.identity)]},
     };
+    
+    private enum ColaTypes
+    {
+        Normal,
+        Crushed,
+    }
     
     private ManualLogSource _mls;
     private string _vendingMachineId;
@@ -78,7 +83,6 @@ public class VileVendingMachineServer : EnemyAI
     public override void OnDestroy()
     {
         netcodeController.OnDespawnHeldItem -= HandleDespawnHeldItem;
-        netcodeController.OnSpawnCola -= HandleSpawnCola;
         netcodeController.OnStartAcceptItemAnimation -= HandleStartAcceptItemAnimation;
         
         VendingMachineRegistry.RemoveVendingMachine(_vendingMachineId);
@@ -97,7 +101,6 @@ public class VileVendingMachineServer : EnemyAI
 
         netcodeController.UpdateVendingMachineIdClientRpc(_vendingMachineId);
         netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
-        netcodeController.OnSpawnCola += HandleSpawnCola;
         netcodeController.OnStartAcceptItemAnimation += HandleStartAcceptItemAnimation;
 
         initialKillProbability = VileVendingMachineConfig.Instance.InitialKillProbability.Value;
@@ -264,11 +267,14 @@ public class VileVendingMachineServer : EnemyAI
                 }
 
                 // Move vending machine to the left or right
+                /*
                 DrawDebugLineAtTransformWithDirection(transform, -transform.right, new Color(0, 255, 0));
                 DrawDebugLineAtTransformWithDirection(transform, transform.right, new Color(255, 0, 0));
                 DrawDebugCircleAtPosition(transform.right, new Color(255, 0, 0));
                 DrawDebugCircleAtPosition(-transform.right, new Color(0, 255, 0));
                 DrawDebugHorizontalLineAtTransform(transform, new Color(0, 0, 255));
+                */
+                
                 float leftDistance = GetDistanceToObjectInDirection(-transform.right, 30f);
                 float rightDistance = GetDistanceToObjectInDirection(transform.right, 30f);
 
@@ -358,27 +364,57 @@ public class VileVendingMachineServer : EnemyAI
         return [entranceTuple, exitTuple];
     }
 
-    private void HandleSpawnCola(string receivedVendingMachineId)
+    private void SpawnCola(ColaTypes colaType = ColaTypes.Normal)
     {
         if (!IsServer) return;
-        if (receivedVendingMachineId != _vendingMachineId) return;
-        
+
+        GameObject colaSpawnPrefab;
+        int colaScrapValue;
+        switch (colaType)
+        {
+            case ColaTypes.Normal:
+            {
+                colaSpawnPrefab = VileVendingMachinePlugin.CompanyColaItem.spawnPrefab;
+                colaScrapValue = UnityEngine.Random.Range(
+                    VileVendingMachineConfig.Instance.ColaMinValue.Value, 
+                    VileVendingMachineConfig.Instance.ColaMaxValue.Value + 1);
+                break;
+            }
+
+            case ColaTypes.Crushed:
+            {
+                colaSpawnPrefab = VileVendingMachinePlugin.CrushedCompanyColaItem.spawnPrefab;
+                colaScrapValue = UnityEngine.Random.Range(
+                    VileVendingMachineConfig.Instance.CrushedColaMinValue.Value, 
+                    VileVendingMachineConfig.Instance.CrushedColaMaxValue.Value + 1);
+                break;
+            }
+
+            default:
+            {
+                _mls.LogError("The given cola type is not valid. This should not happen.");
+                return; 
+            }
+        }
+
         GameObject colaObject = Instantiate(
-            VileVendingMachinePlugin.CompanyColaItem.spawnPrefab,
+            colaSpawnPrefab,
             colaPlaceholder.position,
             colaPlaceholder.rotation,
             colaPlaceholder);
-
+        
         CompanyColaBehaviour colaBehaviour = colaObject.GetComponent<CompanyColaBehaviour>();
-        if (colaBehaviour == null) _mls.LogError("colaBehaviour is null");
+        if (colaBehaviour == null)
+        {
+            _mls.LogError("colaBehaviour is null. This should not happen.");
+            return;
+        }
         
         colaBehaviour.isPartOfVendingMachine = true;
         colaBehaviour.isPhysicsEnabled = true;
         colaBehaviour.grabbableToEnemies = false;
         colaBehaviour.fallTime = 1f;
-        int colaScrapValue = UnityEngine.Random.Range(
-            VileVendingMachineConfig.Instance.ColaMinValue.Value, 
-            VileVendingMachineConfig.Instance.ColaMaxValue.Value + 1);
+        
         
         colaBehaviour.SetScrapValue(colaScrapValue);
         colaBehaviour.UpdateScrapValue(colaScrapValue);
@@ -415,14 +451,23 @@ public class VileVendingMachineServer : EnemyAI
         yield return new WaitForSeconds(0.1f);
         netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.ArmRetract);
 
+        // Get the scan node properties
         int heldItemValue = 20;
+        string heldItemName = "";
         ScanNodeProperties heldItemProperties = itemHolder.GetComponentInChildren<ScanNodeProperties>();
-        if (heldItemProperties != null) heldItemValue = heldItemProperties.scrapValue;
+        if (heldItemProperties != null)
+        {
+            heldItemValue = heldItemProperties.scrapValue;
+            heldItemName = heldItemProperties.headerText;
+        }
+        LogDebug(heldItemName);
         
         yield return new WaitForSeconds(3f);
-        _currentKillProbability = heldItemValue > 90 ? 
-            Mathf.Max(initialKillProbability, _currentKillProbability * killProbabilityReductionFactor) : 
-            Mathf.Min(_currentKillProbability * killProbabilityGrowthFactor, 1f);
+        
+        // Set the kill probability
+        if (heldItemName == "Crushed Company Cola") _currentKillProbability = 1;
+        else if (heldItemValue > 90) _currentKillProbability = Mathf.Max(initialKillProbability, _currentKillProbability * killProbabilityReductionFactor);
+        else _currentKillProbability = Mathf.Min(_currentKillProbability * killProbabilityGrowthFactor, 1f);
         
         if (UnityEngine.Random.value < _currentKillProbability) // kill player
         {
@@ -433,9 +478,14 @@ public class VileVendingMachineServer : EnemyAI
             yield return new WaitForSeconds(2.5f);
             netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.Grind);
             yield return new WaitForSeconds(4);
+            SpawnCola(ColaTypes.Crushed);
+        }
+        else
+        {
+            SpawnCola();
         }
         
-        SpawnCola();
+        
         yield return new WaitForSeconds(0.5f);
         netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.Dispense);
         yield return new WaitForSeconds(2);
@@ -477,11 +527,6 @@ public class VileVendingMachineServer : EnemyAI
         return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation, layerMask);
         
         #endif
-    }
-
-    private void SpawnCola()
-    {
-        HandleSpawnCola(_vendingMachineId);
     }
 
     private bool IsFireExitAllowedOutside()

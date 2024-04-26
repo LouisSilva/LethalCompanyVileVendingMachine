@@ -23,7 +23,7 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
 {
     public const string ModGuid = $"LCM_VileVendingMachine|{ModVersion}";
     private const string ModName = "Lethal Company Vile Vending Machine Mod";
-    private const string ModVersion = "1.0.3";
+    private const string ModVersion = "1.0.5";
 
     private readonly Harmony _harmony = new(ModGuid);
 
@@ -36,6 +36,7 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
     private static EnemyType _vileVendingMachineEnemyType;
 
     public static Item CompanyColaItem;
+    public static Item CrushedCompanyColaItem;
     private static Item _plushieItem;
         
     private void Awake()
@@ -56,6 +57,7 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
 
         SetupVileVendingMachine();
         SetupCompanyCola();
+        SetupCrushedCompanyCola();
         SetupPlushie();
             
         _harmony.PatchAll(typeof(VileVendingMachinePlugin));
@@ -94,6 +96,20 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
         NetworkPrefabs.RegisterNetworkPrefab(CompanyColaItem.spawnPrefab);
         Utilities.FixMixerGroups(CompanyColaItem.spawnPrefab);
         Items.RegisterScrap(CompanyColaItem, 0, Levels.LevelTypes.All);
+    }
+    
+    private void SetupCrushedCompanyCola()
+    {
+        CrushedCompanyColaItem = Assets.MainAssetBundle.LoadAsset<Item>("CrushedCompanyColaItemData");
+        if (CrushedCompanyColaItem == null)
+        {
+            Mls.LogError("Failed to load CrushedCompanyColaItemData from AssetBundle");
+            return;
+        }
+            
+        NetworkPrefabs.RegisterNetworkPrefab(CrushedCompanyColaItem.spawnPrefab);
+        Utilities.FixMixerGroups(CrushedCompanyColaItem.spawnPrefab);
+        Items.RegisterScrap(CrushedCompanyColaItem, 0, Levels.LevelTypes.All);
     }
 
     private void SetupPlushie()
@@ -151,6 +167,8 @@ public class VileVendingMachineConfig : SyncedInstance<VileVendingMachineConfig>
         
     public readonly ConfigEntry<int> ColaMaxValue;
     public readonly ConfigEntry<int> ColaMinValue;
+    public readonly ConfigEntry<int> CrushedColaMaxValue;
+    public readonly ConfigEntry<int> CrushedColaMinValue;
     public readonly ConfigEntry<int> PlushieMaxValue;
     public readonly ConfigEntry<int> PlushieMinValue;
     public readonly ConfigEntry<int> PlushieSpawnRate;
@@ -249,6 +267,20 @@ public class VileVendingMachineConfig : SyncedInstance<VileVendingMachineConfig>
             "Company Cola Maximum Value",
             90,
             "The maximum possible value of a company cola"
+        );
+        
+        CrushedColaMinValue = cfg.Bind(
+            "Item Spawn Values",
+            "Crushed Company Cola Minimum Value",
+            1,
+            "The minimum possible value of a crushed company cola"
+        );
+            
+        CrushedColaMaxValue = cfg.Bind(
+            "Item Spawn Values",
+            "Crushed Company Cola Maximum Value",
+            5,
+            "The maximum possible value of a crushed company cola"
         );
         
         PlushieMinValue = cfg.Bind(

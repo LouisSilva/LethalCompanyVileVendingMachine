@@ -8,12 +8,8 @@ namespace LethalCompanyVileVendingMachine;
 public class CompanyColaBehaviour : PhysicsProp
 {
     private ManualLogSource _mls;
-
     private string _colaId;
-
-    private bool _isFalling;
-    private float _lastPositionY;
-    private float _positionStableCounter;
+    
     [SerializeField] private float stabilityThreshold = 0.005f;
     [SerializeField] private float requiredStableTime = 0.2f;
 
@@ -27,7 +23,12 @@ public class CompanyColaBehaviour : PhysicsProp
     
     public bool isPartOfVendingMachine;
     public bool isPhysicsEnabled;
+    
+    private bool _isFalling;
     private bool _hasBeenPickedUp;
+    
+    private float _lastPositionY;
+    private float _positionStableCounter;
 
     private void Awake()
     {
@@ -37,24 +38,10 @@ public class CompanyColaBehaviour : PhysicsProp
 
     public override void Start()
     {
-        propColliders = gameObject.GetComponentsInChildren<Collider>();
-        originalScale = transform.localScale;
-        fallTime = 1f;
-        hasHitGround = true;
-        reachedFloorTarget = true;
+        base.Start();
         grabbable = true;
         grabbableToEnemies = true;
-        targetFloorPosition = transform.localPosition;
         _lastPositionY = transform.position.y;
-        
-        if(RoundManager.Instance.mapPropsContainer != null)
-            radarIcon = Instantiate(StartOfRound.Instance.itemRadarIconPrefab, RoundManager.Instance.mapPropsContainer.transform).transform;
-
-        if (IsOwner) HoarderBugAI.grabbableObjectsInMap.Add(gameObject);
-        foreach (MeshRenderer componentsInChild in gameObject.GetComponentsInChildren<MeshRenderer>())
-            componentsInChild.renderingLayerMask = 1U;
-        foreach (SkinnedMeshRenderer componentsInChild in gameObject.GetComponentsInChildren<SkinnedMeshRenderer>())
-            componentsInChild.renderingLayerMask = 1U;
     }
 
     public override void Update()

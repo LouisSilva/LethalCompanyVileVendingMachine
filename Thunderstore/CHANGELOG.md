@@ -1,3 +1,9 @@
+## 1.0.5
+* Fixed bug where it wouldn't let you gamble the cola with the lethal casino mod.
+* Fixed naming mismatch with the vending machine scan node.
+* Fixed bug where the player could scan a cola while its in their hand.
+* Added a secret item :)
+
 ## 1.0.4
 * Fixed plushie having the wrong icon in the toolbar.
 * Fixed clients not being able to place an item on the hand.

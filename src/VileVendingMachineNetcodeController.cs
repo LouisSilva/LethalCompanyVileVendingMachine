@@ -19,7 +19,6 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     public event Action<string> OnDespawnHeldItem;
     public event Action<string, NetworkObjectReference> OnUpdateServerHeldItemCopy;
     public event Action<string, int> OnChangeTargetPlayer;
-    public event Action<string> OnSpawnCola;
     public event Action<string, NetworkObjectReference, int> OnUpdateColaNetworkObjectReference;
     public event Action<string, bool> OnSetMeshEnabled;
     public event Action<string, Vector3, Quaternion> OnPlayMaterializeVfx;
@@ -68,12 +67,6 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     public void SetMeshEnabledClientRpc(string receivedVendingMachineId, bool meshEnabled)
     {
         OnSetMeshEnabled?.Invoke(receivedVendingMachineId, meshEnabled);
-    }
-
-    [ServerRpc(RequireOwnership = false)]
-    public void SpawnColaServerRpc(string receivedVendingMachineId)
-    {
-        OnSpawnCola?.Invoke(receivedVendingMachineId);
     }
 
     [ClientRpc]

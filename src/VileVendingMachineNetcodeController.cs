@@ -13,12 +13,11 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     public event Action<string> OnInitializeConfigValues;
     public event Action<string> OnUpdateVendingMachineIdentifier;
     public event Action<string, int> OnDoAnimation;
-    public event Action<string, int> OnPlayerDiscardHeldObject;
+    public event Action<string, ulong> OnPlayerDiscardHeldObject;
     public event Action<string, int, bool> OnChangeAnimationParameterBool;
     public event Action<string, NetworkObjectReference, Vector3> OnPlaceItemInHand;
     public event Action<string> OnDespawnHeldItem;
-    public event Action<string, NetworkObjectReference> OnUpdateServerHeldItemCopy;
-    public event Action<string, int> OnChangeTargetPlayer;
+    public event Action<string, ulong> OnChangeTargetPlayer;
     public event Action<string, NetworkObjectReference, int> OnUpdateColaNetworkObjectReference;
     public event Action<string, bool> OnSetMeshEnabled;
     public event Action<string, Vector3, Quaternion> OnPlayMaterializeVfx;
@@ -77,13 +76,6 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     }
 
     [ServerRpc(RequireOwnership = false)]
-    public void UpdateServerHeldItemCopyServerRpc(string receivedVendingMachineId,
-        NetworkObjectReference networkObjectReference)
-    {
-        OnUpdateServerHeldItemCopy?.Invoke(receivedVendingMachineId, networkObjectReference);
-    }
-
-    [ServerRpc(RequireOwnership = false)]
     public void PlaceItemInHandServerRpc(string receivedVendingMachineId, NetworkObjectReference networkObjectReference, Vector3 position)
     {
         PlaceItemInHandClientRpc(receivedVendingMachineId, networkObjectReference, position);
@@ -95,8 +87,14 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
         OnDespawnHeldItem?.Invoke(receivedVendingMachineId);
     }
 
+    [ServerRpc(RequireOwnership = false)]
+    public void ChangeTargetPlayerServerRpc(string receivedVendingMachineId, ulong playerClientId)
+    {
+        ChangeTargetPlayerClientRpc(receivedVendingMachineId, playerClientId);
+    }
+
     [ClientRpc]
-    public void ChangeTargetPlayerClientRpc(string receivedVendingMachineId, int playerClientId)
+    private void ChangeTargetPlayerClientRpc(string receivedVendingMachineId, ulong playerClientId)
     {
         OnChangeTargetPlayer?.Invoke(receivedVendingMachineId, playerClientId);
     }
@@ -108,7 +106,7 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     }
     
     [ClientRpc]
-    public void PlayerDiscardHeldObjectClientRpc(string receivedVendingMachineId, int playerClientId)
+    public void PlayerDiscardHeldObjectClientRpc(string receivedVendingMachineId, ulong playerClientId)
     {
         OnPlayerDiscardHeldObject?.Invoke(receivedVendingMachineId, playerClientId);
     }
@@ -120,7 +118,7 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     }
 
     [ClientRpc]
-    public void UpdateVendingMachineIdClientRpc(string receivedVendingMachineId)
+    public void SyncVendingMachineIdClientRpc(string receivedVendingMachineId)
     {
         OnUpdateVendingMachineIdentifier?.Invoke(receivedVendingMachineId);
     }

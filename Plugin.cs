@@ -23,14 +23,14 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
 {
     public const string ModGuid = $"LCM_VileVendingMachine|{ModVersion}";
     private const string ModName = "Lethal Company Vile Vending Machine Mod";
-    private const string ModVersion = "1.0.5";
+    private const string ModVersion = "1.0.6";
 
     private readonly Harmony _harmony = new(ModGuid);
 
     public static readonly ManualLogSource Mls = BepInEx.Logging.Logger.CreateLogSource(ModGuid);
 
     private static VileVendingMachinePlugin _instance;
-        
+    
     public static VileVendingMachineConfig VileVendingMachineConfig { get; internal set; }
 
     private static EnemyType _vileVendingMachineEnemyType;

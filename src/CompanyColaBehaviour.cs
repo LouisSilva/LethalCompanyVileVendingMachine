@@ -1,5 +1,6 @@
 ﻿using System;
 using BepInEx.Logging;
+using Unity.Netcode;
 using UnityEngine;
 using Logger = BepInEx.Logging.Logger;
 
@@ -9,12 +10,6 @@ public class CompanyColaBehaviour : PhysicsProp
 {
     private ManualLogSource _mls;
     private string _colaId;
-    
-    [SerializeField] private float stabilityThreshold = 0.005f;
-    [SerializeField] private float requiredStableTime = 0.2f;
-
-    public AudioSource colaAudioSource;
-    public AudioClip[] colaAudioClips;
 
     #pragma warning disable 0649
     [SerializeField] private ScanNodeProperties innerScanNode;
@@ -22,30 +17,29 @@ public class CompanyColaBehaviour : PhysicsProp
     #pragma warning restore 0649
     
     public bool isPartOfVendingMachine;
-    public bool isPhysicsEnabled;
     
-    private bool _isFalling;
     private bool _hasBeenPickedUp;
-    
-    private float _lastPositionY;
-    private float _positionStableCounter;
-
-    private void Awake()
-    {
-        _colaId = Guid.NewGuid().ToString();
-        _mls = Logger.CreateLogSource($"{VileVendingMachinePlugin.ModGuid} | Company Cola {_colaId}");
-    }
 
     public override void Start()
     {
         base.Start();
         grabbable = true;
         grabbableToEnemies = true;
-        _lastPositionY = transform.position.y;
+        
+        if (!IsServer)
+        {
+            _colaId = Guid.NewGuid().ToString();
+            _mls = Logger.CreateLogSource($"{VileVendingMachinePlugin.ModGuid} | Company Cola {_colaId}");
+            SyncColaIdClientRpc(_colaId);
+        }
     }
 
     public override void Update()
     {
+        LogDebug($"Is part of vending machine?: {isPartOfVendingMachine}");
+        LogDebug($"Is my parent null?: {transform.parent == null}");
+        LogDebug($"My position: {transform.position}");
+        
         if (isHeld && isPartOfVendingMachine) isPartOfVendingMachine = false;
         if (isPartOfVendingMachine) return;
         base.Update();
@@ -55,44 +49,22 @@ public class CompanyColaBehaviour : PhysicsProp
     {
         transform.localScale = new Vector3(1.5f, 1.5f, 1.5f);
         
-        if (isPartOfVendingMachine) return;
+        if (isPartOfVendingMachine)
+        {
+            if (transform.parent != null)
+            {
+                transform.position = transform.parent.position;
+                transform.rotation = transform.parent.rotation;
+            }
+            return;
+        }
         base.LateUpdate();
-    }
-
-    private void FixedUpdate()
-    {
-        if (!IsOwner) return;
-        if (!isPhysicsEnabled) return;
-        
-        float yPos = transform.position.y;
-        if (yPos < _lastPositionY)
-        {
-            _isFalling = true;
-            _positionStableCounter = 0.0f;
-        }
-        else if (Mathf.Abs(yPos - _lastPositionY) <= stabilityThreshold)
-        {
-            _positionStableCounter += Time.fixedDeltaTime;
-        }
-
-        _lastPositionY = yPos;
-    }
-
-    private void OnCollisionEnter(Collision collision)
-    {
-        if (!IsOwner) return;
-        if (collision.collider.tag is "Player" or "PhysicsProp" or "PlayerRagdoll" or "Enemy") return;
-        if (!_isFalling || !(_positionStableCounter >= requiredStableTime)) return;
-        
-        PlayDropSFX();
-        _isFalling = false;
     }
 
     public override void EquipItem()
     {
         base.EquipItem();
         isPartOfVendingMachine = false;
-        isPhysicsEnabled = false;
 
         RemoveRigidbodyAndDoubleScanNodes();
     }
@@ -101,7 +73,6 @@ public class CompanyColaBehaviour : PhysicsProp
     {
         base.GrabItem();
         isPartOfVendingMachine = false;
-        isPhysicsEnabled = false;
         
         RemoveRigidbodyAndDoubleScanNodes();
     }
@@ -117,6 +88,8 @@ public class CompanyColaBehaviour : PhysicsProp
 
     public void UpdateScrapValue(int value)
     {
+        SetScrapValue(value);
+        
         // Two scan node property scripts are needed, because the rigidbody somehow makes the scan node gameobject "hidden"
         if (innerScanNode != null)
         {
@@ -133,11 +106,25 @@ public class CompanyColaBehaviour : PhysicsProp
         }
     }
 
+    [ClientRpc]
+    public void SyncColaIdClientRpc(string colaId)
+    {
+        if (IsServer) return;
+        _colaId = colaId;
+        _mls = Logger.CreateLogSource($"{VileVendingMachinePlugin.ModGuid} | Company Cola {_colaId}");
+    }
+
     private void LogDebug(string msg)
     {
         #if DEBUG
-        if (!IsOwner) return;
-        _mls.LogInfo(msg);
+        try
+        {
+            _mls.LogInfo(msg);
+        }
+        catch (Exception e)
+        {
+        }
+            
         #endif
     }
 }

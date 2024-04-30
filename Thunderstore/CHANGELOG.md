@@ -1,3 +1,7 @@
+## 1.0.6
+* Fixed bug where the vending machine will kill everyone instead of the player who deposited the item.
+* Fixed bug where the cola wouldn't roll out the vending machine for clients.
+
 ## 1.0.5
 * Fixed bug where it wouldn't let you gamble the cola with the lethal casino mod.
 * Fixed naming mismatch with the vending machine scan node.

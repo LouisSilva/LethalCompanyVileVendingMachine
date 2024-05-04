@@ -1,3 +1,6 @@
+## 1.0.7
+* Refined the vending machine placement algorithm. There are still bugs, but less than before. The next update will fully eradicate them.
+
 ## 1.0.6
 * Fixed bug where the vending machine will kill everyone instead of the player who deposited the item.
 * Fixed bug where the cola wouldn't roll out the vending machine for clients.

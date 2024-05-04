@@ -7,6 +7,7 @@ using BepInEx.Logging;
 using Unity.Netcode;
 using UnityEngine;
 using Logger = BepInEx.Logging.Logger;
+using Random = UnityEngine.Random;
 using Vector3 = UnityEngine.Vector3;
 
 namespace LethalCompanyVileVendingMachine;
@@ -36,8 +37,8 @@ public class VileVendingMachineServer : EnemyAI
             new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Left, new Vector3(-41.011f, 47.738f, 4.101f), Quaternion.Euler(0, 90, 0)),
             new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Right, Vector3.zero, Quaternion.identity)]},
     };
-    
-    public enum ColaTypes
+
+    private enum ColaTypes
     {
         Normal,
         Crushed,
@@ -85,7 +86,7 @@ public class VileVendingMachineServer : EnemyAI
         _mls = Logger.CreateLogSource(
             $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine Server {_vendingMachineId}");
         
-        UnityEngine.Random.InitState(StartOfRound.Instance.randomMapSeed + _vendingMachineId.GetHashCode());
+        Random.InitState(StartOfRound.Instance.randomMapSeed + _vendingMachineId.GetHashCode());
 
         netcodeController.SyncVendingMachineIdClientRpc(_vendingMachineId);
         netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
@@ -99,8 +100,7 @@ public class VileVendingMachineServer : EnemyAI
         agent.updateRotation = false;
         agent.updatePosition = false;
         
-        #if DEBUG
-        #else
+        #if !DEBUG
         netcodeController.SetMeshEnabledClientRpc(_vendingMachineId, false);
         EnableEnemyMesh(false);
         #endif
@@ -139,7 +139,7 @@ public class VileVendingMachineServer : EnemyAI
         
         // Shuffle the doors
         if (!VileVendingMachineConfig.Instance.AlwaysSpawnOutsideMainEntrance.Value)
-            doors = doors.OrderBy(x => UnityEngine.Random.Range(int.MinValue, int.MaxValue)).ToArray();
+            doors = doors.OrderBy(x => Random.Range(int.MinValue, int.MaxValue)).ToArray();
         
         // Loops over all the doors on the outside, and inside the dungeon. The i values correspond to the EntranceOrExit enum
         for (int i = 0; i < 2; i++)
@@ -176,6 +176,7 @@ public class VileVendingMachineServer : EnemyAI
                 }
 
                 // See if there is a cached placement for this map
+                #if !DEBUG
                 if (StoredViablePlacements.TryGetValue(StartOfRound.Instance.currentLevel.sceneName, out List<Tuple<int, LeftOrRight, Vector3, Quaternion>> placement))
                 {
                     foreach (Tuple<int, LeftOrRight, Vector3, Quaternion> placementTuple in placement.Where(
@@ -192,6 +193,7 @@ public class VileVendingMachineServer : EnemyAI
                         yield break;
                     }
                 }
+                #endif
                 // If the using the cache stuff didn't work, then try spawning it normally
                 
                 // Gets the transform of the door. It takes into account whether the current door is an entrance or exit
@@ -213,65 +215,137 @@ public class VileVendingMachineServer : EnemyAI
                 Vector3 vectorB = Vector3.Cross(vectorA, Vector3.up).normalized;
 
                 vectorA.y = 0;
-                transform.position = doorPosition + vectorA.normalized * -0.5f;
+                transform.position = doorPosition + vectorA.normalized * -0.1f;
                 transform.rotation = Quaternion.LookRotation(vectorA);
 
-                int counter = 0;
-                while (!IsColliderAgainstWall(backCollider) || IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask) || IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMask))
+                // Move vending machine forward until its back is still touching the wall, but its main body is not touching the wall
+                bool stageOneSuccess = false;
+                for (int k=0; k < 300; k++)
                 {
                     #if DEBUG
-                    LogDebug($"counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMask)}, mainCol: { IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMask)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMask)}");
-                    LogDebug($"counter: {counter}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, mainCol: { IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}");
-                    #endif
-                    
-                    if (counter >= 300)
-                    {
-                        PlacementFail();
-                        yield break;
-                    }
-                    
-                    transform.position += vectorA.normalized * 0.02f;
-                    counter++;
-                    
-                    #if DEBUG
-                    yield return new WaitForSeconds(0.3f);
+                    yield return new WaitForSeconds(0.2f);
                     #else
                     yield return null;
                     #endif
-                }
+                    
+                    #if DEBUG
+                    LogDebug($"counter: {k}, backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, mainCol: {IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}");
+                    #endif
 
-                // Move vending machine to the floor
-                Vector3 floorRayStart = transform.position + Vector3.up * 0.5f;
-                if (Physics.Raycast(floorRayStart, -Vector3.up, out RaycastHit hit, 8f,
-                        StartOfRound.Instance.collidersAndRoomMask))
-                {
-                    transform.position = new Vector3(transform.position.x,
-                        hit.point.y + floorCollider.transform.localPosition.y, transform.position.z);
+                    transform.position += vectorA.normalized * 0.02f;
+                    if (!IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault) ||
+                        IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault) ||
+                        IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
+                        continue;
+                    
+                    stageOneSuccess = true;
+                    break;
                 }
-
-                // Move vending machine to the left or right
-                /*
-                DrawDebugLineAtTransformWithDirection(transform, -transform.right, new Color(0, 255, 0));
-                DrawDebugLineAtTransformWithDirection(transform, transform.right, new Color(255, 0, 0));
-                DrawDebugCircleAtPosition(transform.right, new Color(255, 0, 0));
-                DrawDebugCircleAtPosition(-transform.right, new Color(0, 255, 0));
-                DrawDebugHorizontalLineAtTransform(transform, new Color(0, 0, 255));
-                */
                 
-                float leftDistance = GetDistanceToObjectInDirection(-transform.right, 30f);
-                float rightDistance = GetDistanceToObjectInDirection(transform.right, 30f);
+                if (!stageOneSuccess) PlacementFail();
+                
+                // Randomly pick either left or right
+                int startingDirection = Random.Range(0, 2) == 0 ? 1 : -1;
+                Vector3 startingPosition = transform.position;
 
-                yield return null;
-                float distanceToDoor = leftDistance > rightDistance ? leftDistance : rightDistance;
-                if (distanceToDoor < 3.1f) continue;
+                // Iterate over both directions, to see if the vending machine can be placed (to the left or right)
+                for (int j=0; j < 2; j++) 
+                {
+                    LogDebug($"Iteration of left or right placement: {j+1} out of 2");
+                    
+                    // First make sure to reset the vending machine's position to in front of the door, just in case this is the second iteration
+                    transform.position = startingPosition;
+                    
+                    // Second, move the vending machine out of the way of the door
+                    const float initialDistanceFromDoor = 2.5f;
+                    int currentDirection = j == 0 ? startingDirection : startingDirection * -1;
+                    transform.position += vectorB * (currentDirection * initialDistanceFromDoor);
+                    LogDebug($"Moved vending machine {initialDistanceFromDoor} units from door for left/right placement");
+                    yield return null;
+                    
+                    // Now check if the vending machine is still in a valid position
+                    // If it is, then try to move the vending machine a random distance away from the door, if there is space
+                    // If it's not, then try the other side of the door (if both sides have been tried then abort the vending machine placement)
+                    if (IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault) &&
+                        !IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault) &&
+                        !IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
+                    {
+                        LogDebug("After initial movement, the placement is still valid");
+                        
+                        #if DEBUG
+                        LogDebug($"backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, mainCol: { IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}");
+                        #endif
+                        
+                        // Pick a random distance from the door to try to reach
+                        float randomDistanceFromDoor = Random.Range(0.01f, 6f);
+                        float currentDistanceFromDoor = 0;
+                        Vector3 previousPosition = transform.position;
+                        LogDebug($"Random distance picked: {randomDistanceFromDoor} units");
+                        
+                        // Start moving towards the target distance
+                        while (currentDistanceFromDoor < randomDistanceFromDoor)
+                        {
+                            // Don't hog the thread
+                            #if DEBUG
+                            yield return new WaitForSeconds(0.3f);
+                            #else
+                            yield return null;
+                            #endif
+                            
+                            // If the new position makes the vending machine spawn invalid, move back to the last valid position and stop moving
+                            if (!IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault) ||
+                                IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault) ||
+                                IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
+                            {
+                                LogDebug($"At distance from door {currentDistanceFromDoor} units, the placement has been made no longer valid. Moving to old position");
+                                transform.position = previousPosition;
+                                break;
+                            }
 
-                LeftOrRight leftOrRight = leftDistance > rightDistance ? LeftOrRight.Left : LeftOrRight.Right;
-                distanceToDoor = 3f;
-                transform.position += vectorB * ((leftOrRight == LeftOrRight.Left ? -1 : 1) * distanceToDoor);
-
-                StartCoroutine(PlacementSuccess(door.entranceId, leftOrRight, (EntranceOrExit)i, callback));
-                yield break;
-            
+                            LogDebug($"At distance from door {currentDistanceFromDoor} units, the placement is still valid. Moving again.");
+                            
+                            // Move the vending machine further towards the target distance from the door
+                            previousPosition = transform.position;
+                            const float distanceIncrease = 0.05f;
+                            transform.position += vectorB * (currentDirection * distanceIncrease);
+                            currentDistanceFromDoor += distanceIncrease;
+                        }
+                        
+                        // Move vending machine to the floor
+                        Vector3 floorRayStart = transform.position + Vector3.up * 0.5f;
+                        if (Physics.Raycast(floorRayStart, -Vector3.up, out RaycastHit hit, 8f,
+                                StartOfRound.Instance.collidersAndRoomMaskAndDefault))
+                        {
+                            transform.position = new Vector3(transform.position.x,
+                                hit.point.y + floorCollider.transform.localPosition.y, transform.position.z);
+                        }
+                        
+                        // Placement was a success, finalize the details
+                        LeftOrRight finalDirectionFromDoor = currentDirection == 1 ? LeftOrRight.Left : LeftOrRight.Right;
+                        LogDebug($"Placement was a success, with position: {transform.position} and being in the {finalDirectionFromDoor} direction from the door.");
+                        StartCoroutine(PlacementSuccess(door.entranceId, finalDirectionFromDoor, (EntranceOrExit)i, callback));
+                        yield break;
+                    }
+                    
+                    // Current iteration failed
+                    #if DEBUG
+                    LogDebug($"Current iteration: {j+1} failed");
+                    LogDebug($"backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, mainCol: { IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}");
+                    #endif
+                    
+                    #if DEBUG
+                    yield return new WaitForSeconds(1f);
+                    #else
+                    yield return null;
+                    #endif
+                    
+                    if (j != 1) continue;
+                    
+                    // If both directions have been tried, abort placement
+                    LogDebug("Both the left and right side has been tried with no success, aborting placement.");
+                    PlacementFail();
+                    yield break;
+                }
             }
         }
 
@@ -294,29 +368,12 @@ public class VileVendingMachineServer : EnemyAI
         }
         catch (NullReferenceException)
         {
-            _mls.LogWarning("The EnableEnemyMesh function failed");
+           LogDebug("The EnableEnemyMesh function failed");
         }
         
         agent.enabled = false;
                 
         callback?.Invoke();
-    }
-
-    private float GetDistanceToObjectInDirection(Vector3 direction, float maxDistance = 50f)
-    {
-        float distance;
-        LogDebug($"Transform position: {transform.position.ToString()}");
-        if (Physics.Raycast(transform.position, direction, out RaycastHit hit, maxDistance, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
-        {
-            distance = hit.distance;
-        }
-        else
-        {
-            distance = 999999;
-            LogDebug("No object found");
-        }
-
-        return distance;
     }
     
     private static EntranceTeleport[] GetDoorTeleports()
@@ -352,7 +409,7 @@ public class VileVendingMachineServer : EnemyAI
             case ColaTypes.Normal:
             {
                 colaSpawnPrefab = VileVendingMachinePlugin.CompanyColaItem.spawnPrefab;
-                colaScrapValue = UnityEngine.Random.Range(
+                colaScrapValue = Random.Range(
                     VileVendingMachineConfig.Instance.ColaMinValue.Value, 
                     VileVendingMachineConfig.Instance.ColaMaxValue.Value + 1);
                 break;
@@ -361,7 +418,7 @@ public class VileVendingMachineServer : EnemyAI
             case ColaTypes.Crushed:
             {
                 colaSpawnPrefab = VileVendingMachinePlugin.CrushedCompanyColaItem.spawnPrefab;
-                colaScrapValue = UnityEngine.Random.Range(
+                colaScrapValue = Random.Range(
                     VileVendingMachineConfig.Instance.CrushedColaMinValue.Value, 
                     VileVendingMachineConfig.Instance.CrushedColaMaxValue.Value + 1);
                 break;
@@ -447,7 +504,7 @@ public class VileVendingMachineServer : EnemyAI
         else _currentKillProbability = Mathf.Min(_currentKillProbability * killProbabilityGrowthFactor, 1f);
 
         ColaTypes colaTypeToSpawn;
-        if (UnityEngine.Random.value < _currentKillProbability) // kill player
+        if (Random.value < _currentKillProbability) // kill player
         {
             _currentKillProbability = initialKillProbability;
             netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.ArmGrab);
@@ -475,32 +532,17 @@ public class VileVendingMachineServer : EnemyAI
         return Physics.Raycast(collider.bounds.center, -collider.transform.forward, out RaycastHit hit, collider.bounds.size.z);
     }
     
-    private bool IsColliderColliding(Collider collider)
-    {
-        #if DEBUG
-        Collider[] collidingObjects = Physics.OverlapBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation);
-        foreach (Collider obj in collidingObjects) {
-            LogDebug("Colliding with: " + obj.name);
-        }
-        return collidingObjects.Length > 0;
-        
-        #else
-        return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation);
-        
-        #endif
-    }
-    
     private bool IsColliderColliding(Collider collider, LayerMask layerMask)
     {
         #if DEBUG
-        Collider[] collidingObjects = Physics.OverlapBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation, layerMask);
+        Collider[] collidingObjects = Physics.OverlapBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation, layerMask, QueryTriggerInteraction.Ignore);
         foreach (Collider obj in collidingObjects) {
             LogDebug("Colliding with: " + obj.name);
         }
         return collidingObjects.Length > 0;
     
         #else
-        return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation, layerMask);
+        return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation, layerMask, QueryTriggerInteraction.Ignore);
         
         #endif
     }

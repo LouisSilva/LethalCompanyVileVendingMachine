@@ -36,10 +36,6 @@ public class CompanyColaBehaviour : PhysicsProp
 
     public override void Update()
     {
-        LogDebug($"Is part of vending machine?: {isPartOfVendingMachine}");
-        LogDebug($"Is my parent null?: {transform.parent == null}");
-        LogDebug($"My position: {transform.position}");
-        
         if (isHeld && isPartOfVendingMachine) isPartOfVendingMachine = false;
         if (isPartOfVendingMachine) return;
         base.Update();
@@ -121,7 +117,7 @@ public class CompanyColaBehaviour : PhysicsProp
         {
             _mls.LogInfo(msg);
         }
-        catch (Exception e)
+        catch (Exception)
         {
         }
             

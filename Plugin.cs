@@ -23,7 +23,7 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
 {
     public const string ModGuid = $"LCM_VileVendingMachine|{ModVersion}";
     private const string ModName = "Lethal Company Vile Vending Machine Mod";
-    private const string ModVersion = "1.0.6";
+    private const string ModVersion = "1.0.7";
 
     private readonly Harmony _harmony = new(ModGuid);
 
@@ -59,7 +59,8 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
         SetupCompanyCola();
         SetupCrushedCompanyCola();
         SetupPlushie();
-            
+        
+        _harmony.PatchAll(typeof(VendingMachineRegistry));
         _harmony.PatchAll(typeof(VileVendingMachinePlugin));
         Mls.LogInfo($"Plugin {ModName} is loaded!");
     }

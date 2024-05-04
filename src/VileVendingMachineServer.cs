@@ -36,6 +36,8 @@ public class VileVendingMachineServer : EnemyAI
             new Tuple<int, LeftOrRight, Vector3, Quaternion>(0, LeftOrRight.Right, new Vector3(-37.73f, 47.67f, 5.42f), Quaternion.Euler(0, 125, 0)),
             new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Left, new Vector3(-41.011f, 47.738f, 4.101f), Quaternion.Euler(0, 90, 0)),
             new Tuple<int, LeftOrRight, Vector3, Quaternion>(1, LeftOrRight.Right, Vector3.zero, Quaternion.identity)]},
+        
+        { "Level10Adamance", [new Tuple<int, LeftOrRight, Vector3, Quaternion>(0, LeftOrRight.Left, new Vector3(-121.2046f, 1.8107f, 0.4547f), Quaternion.Euler(0, 90, 0))]},
     };
 
     private enum ColaTypes

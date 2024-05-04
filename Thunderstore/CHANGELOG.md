@@ -1,5 +1,6 @@
 ## 1.0.7
-* Refined the vending machine placement algorithm. There are still bugs, but less than before. The next update will fully eradicate them.
+* Refined the vending machine placement algorithm. Most bugs with it should be eradicated.
+* Fixed bug where the vending machine registry didn't get cleared after the round has ended.
 
 ## 1.0.6
 * Fixed bug where the vending machine will kill everyone instead of the player who deposited the item.

@@ -1,3 +1,7 @@
+## 1.0.8
+* Fixed bug where the player could scan the plushie while its in their hand.
+* Added another config that lets the player decide what the vending machine determines as an expensive item.
+
 ## 1.0.7
 * Refined the vending machine placement algorithm. Most bugs with it should be eradicated.
 * Fixed bug where the vending machine registry didn't get cleared after the round has ended.

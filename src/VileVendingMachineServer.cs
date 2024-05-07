@@ -40,6 +40,9 @@ public class VileVendingMachineServer : EnemyAI
         { "Level10Adamance", [new Tuple<int, LeftOrRight, Vector3, Quaternion>(0, LeftOrRight.Left, new Vector3(-121.2046f, 1.8107f, 0.4547f), Quaternion.Euler(0, 90, 0))]},
     };
 
+    /// <summary>
+    /// Types of items that the vending machine can dispense
+    /// </summary>
     private enum ColaTypes
     {
         Normal,
@@ -54,6 +57,11 @@ public class VileVendingMachineServer : EnemyAI
     [SerializeField] private float initialKillProbability = 0.01f;
     [SerializeField] private float killProbabilityGrowthFactor = 4.64f;
     [SerializeField] private float killProbabilityReductionFactor = 0.25f;
+    [SerializeField] private int expensiveItemValue = 90;
+    [SerializeField] private int companyColaMinValue = 30;
+    [SerializeField] private int companyColaMaxValue = 90;
+    [SerializeField] private int crushedColaMinValue = 1;
+    [SerializeField] private int crushedColaMaxValue = 5;
     private float _currentKillProbability = 0.01f;
 
     [Header("Colliders and Transforms")]
@@ -70,13 +78,50 @@ public class VileVendingMachineServer : EnemyAI
     [SerializeField] private VileVendingMachineNetcodeController netcodeController;
 #pragma warning restore 0649
 
+    /// <summary>
+    /// Removes itself from the vending machine registry when the gameobject is destroyed.
+    /// </summary>
     public override void OnDestroy()
+    {
+        base.OnDestroy();
+        VendingMachineRegistry.RemoveVendingMachine(_vendingMachineId);
+    }
+
+    /// <summary>
+    /// Unsubscribes from the needed network events when the vending machine is disabled.
+    /// </summary>
+    private void OnDisable()
     {
         netcodeController.OnDespawnHeldItem -= HandleDespawnHeldItem;
         netcodeController.OnStartAcceptItemAnimation -= HandleStartAcceptItemAnimation;
         netcodeController.OnChangeTargetPlayer -= HandleChangeTargetPlayer;
+    }
+
+    /// <summary>
+    /// Subscribes to the needed network events when the vending machine is enabled.
+    /// </summary>
+    private void OnEnable()
+    {
+        netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
+        netcodeController.OnStartAcceptItemAnimation += HandleStartAcceptItemAnimation;
+        netcodeController.OnChangeTargetPlayer += HandleChangeTargetPlayer;
+    }
+
+    /// <summary>
+    /// Initializes all the config values.
+    /// </summary>
+    private void InitializeConfigValues()
+    {
+        initialKillProbability = Mathf.Clamp(VileVendingMachineConfig.Instance.InitialKillProbability.Value, 0f, 1f);
+        killProbabilityGrowthFactor = Mathf.Clamp(VileVendingMachineConfig.Instance.KillProbabilityGrowthFactor.Value, 0f, float.MaxValue);
+        killProbabilityReductionFactor = Mathf.Clamp(VileVendingMachineConfig.Instance.KillProbabilityReductionFactor.Value, 0f, 1f);
+        companyColaMinValue = Mathf.Clamp(VileVendingMachineConfig.Instance.ColaMinValue.Value, 0, int.MaxValue);
+        companyColaMaxValue = Mathf.Clamp(VileVendingMachineConfig.Instance.ColaMaxValue.Value, 0, int.MaxValue);
+        crushedColaMinValue = Mathf.Clamp(VileVendingMachineConfig.Instance.CrushedColaMinValue.Value, 0, int.MaxValue);
+        crushedColaMaxValue = Mathf.Clamp(VileVendingMachineConfig.Instance.CrushedColaMaxValue.Value, 0, int.MaxValue);
+        expensiveItemValue = Mathf.Clamp(VileVendingMachineConfig.Instance.ExpensiveItemValue.Value, -1, int.MaxValue);
         
-        VendingMachineRegistry.RemoveVendingMachine(_vendingMachineId);
+        if (expensiveItemValue == -1) expensiveItemValue = companyColaMaxValue;
     }
 
     public override void Start()
@@ -84,24 +129,23 @@ public class VileVendingMachineServer : EnemyAI
         base.Start();
         if (!IsServer) return;
 
+        // Create vending machine id and logger
         _vendingMachineId = Guid.NewGuid().ToString();
         _mls = Logger.CreateLogSource(
             $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine Server {_vendingMachineId}");
         
+        // Initialize the random function and config values
         Random.InitState(StartOfRound.Instance.randomMapSeed + _vendingMachineId.GetHashCode());
-
+        InitializeConfigValues();
+        
         netcodeController.SyncVendingMachineIdClientRpc(_vendingMachineId);
-        netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
-        netcodeController.OnStartAcceptItemAnimation += HandleStartAcceptItemAnimation;
-        netcodeController.OnChangeTargetPlayer += HandleChangeTargetPlayer;
-
-        initialKillProbability = VileVendingMachineConfig.Instance.InitialKillProbability.Value;
-        killProbabilityGrowthFactor = VileVendingMachineConfig.Instance.KillProbabilityGrowthFactor.Value;
-        killProbabilityReductionFactor = VileVendingMachineConfig.Instance.KillProbabilityReductionFactor.Value;
-
+        
+        // Make sure the vending machine agent doesn't move, ever.
+        // This enemy shouldn't have a NavMeshAgent, but zeeker's enemyAI code needs enemies to have an agent 
         agent.updateRotation = false;
         agent.updatePosition = false;
         
+        // Make the vending machine go invisible when its spawning
         #if !DEBUG
         netcodeController.SetMeshEnabledClientRpc(_vendingMachineId, false);
         EnableEnemyMesh(false);
@@ -123,6 +167,11 @@ public class VileVendingMachineServer : EnemyAI
         }
     }
 
+    /// <summary>
+    /// The coroutine that spawns the vending machine in a sufficient spot
+    /// </summary>
+    /// <param name="callback">The callback function which in this case is used to play animations after the spawn has finished</param>
+    /// <returns></returns>
     private IEnumerator PlaceVendingMachine(Action callback = null)
     {
         int checksDone = 0;
@@ -354,6 +403,14 @@ public class VileVendingMachineServer : EnemyAI
         PlacementFail();
     }
 
+    /// <summary>
+    /// The coroutine responsible for playing the animations when the vending machine spawns
+    /// </summary>
+    /// <param name="teleportId">The door id which the vending machine spawned at</param>
+    /// <param name="leftOrRight">Whether the vending machine spawned to the left or right of the door</param>
+    /// <param name="entranceOrExit">Whether the door was an entrance to the dungeon, or exit</param>
+    /// <param name="callback">The callback function which is used to play animations</param>
+    /// <returns></returns>
     private IEnumerator PlacementSuccess(int teleportId, LeftOrRight leftOrRight, EntranceOrExit entranceOrExit, Action callback = null)
     {
         LogDebug($"Vending machine was placed successfully at teleportId: {teleportId}");
@@ -378,11 +435,20 @@ public class VileVendingMachineServer : EnemyAI
         callback?.Invoke();
     }
     
+    /// <summary>
+    /// Gets all the doors on the moon
+    /// </summary>
+    /// <returns>An array of all the door objects on the moon</returns>
     private static EntranceTeleport[] GetDoorTeleports()
     {
         return FindObjectsOfType<EntranceTeleport>().Where(t => t != null && t.exitPoint != null && t.isEntranceToBuilding).ToArray();
     }
 
+    /// <summary>
+    /// Returns a list of tuples which contain a transform of the exit door and entrance door for a door id
+    /// </summary>
+    /// <param name="entranceId">The id of the door to get the transforms of</param>
+    /// <returns>The list of transforms</returns>
     private static IEnumerable<Tuple<Transform, int>> GetDoorTransforms(int entranceId)
     {
         EntranceTeleport[] allTeleports = FindObjectsOfType<EntranceTeleport>().ToArray();
@@ -400,6 +466,10 @@ public class VileVendingMachineServer : EnemyAI
         return [entranceTuple, exitTuple];
     }
 
+    /// <summary>
+    /// Spawns a given cola from the vending machine
+    /// </summary>
+    /// <param name="colaType">The type of cola to spawn</param>
     private void SpawnCola(ColaTypes colaType = ColaTypes.Normal)
     {
         if (!IsServer) return;
@@ -412,8 +482,8 @@ public class VileVendingMachineServer : EnemyAI
             {
                 colaSpawnPrefab = VileVendingMachinePlugin.CompanyColaItem.spawnPrefab;
                 colaScrapValue = Random.Range(
-                    VileVendingMachineConfig.Instance.ColaMinValue.Value, 
-                    VileVendingMachineConfig.Instance.ColaMaxValue.Value + 1);
+                    companyColaMinValue, 
+                    companyColaMaxValue + 1);
                 break;
             }
 
@@ -421,8 +491,8 @@ public class VileVendingMachineServer : EnemyAI
             {
                 colaSpawnPrefab = VileVendingMachinePlugin.CrushedCompanyColaItem.spawnPrefab;
                 colaScrapValue = Random.Range(
-                    VileVendingMachineConfig.Instance.CrushedColaMinValue.Value, 
-                    VileVendingMachineConfig.Instance.CrushedColaMaxValue.Value + 1);
+                    crushedColaMinValue, 
+                    crushedColaMaxValue + 1);
                 break;
             }
 
@@ -461,6 +531,10 @@ public class VileVendingMachineServer : EnemyAI
         netcodeController.UpdateColaNetworkObjectReferenceClientRpc(_vendingMachineId, colaNetworkObject, colaScrapValue);
     }
 
+    /// <summary>
+    /// Despawns the current item the vending machine is holding in its hand
+    /// </summary>
+    /// <param name="receivedVendingMachineId">The vending machine id received by the network event</param>
     private void HandleDespawnHeldItem(string receivedVendingMachineId)
     {
         if (!IsServer) return;
@@ -481,6 +555,10 @@ public class VileVendingMachineServer : EnemyAI
         netcodeController.SetIsItemOnHandClientRpc(_vendingMachineId, false);
     }
 
+    /// <summary>
+    /// The coroutine for handling the logic and animations of when a player places an item in the vending machine's hand
+    /// </summary>
+    /// <returns></returns>
     private IEnumerator AcceptItem()
     {
         if (!IsServer) yield break;
@@ -502,7 +580,7 @@ public class VileVendingMachineServer : EnemyAI
         
         // Set the kill probability
         if (heldItemName == "Crushed Company Cola") _currentKillProbability = 1;
-        else if (heldItemValue > 90) _currentKillProbability = Mathf.Max(initialKillProbability, _currentKillProbability * killProbabilityReductionFactor);
+        else if (heldItemValue > expensiveItemValue) _currentKillProbability = Mathf.Max(initialKillProbability, _currentKillProbability * killProbabilityReductionFactor);
         else _currentKillProbability = Mathf.Min(_currentKillProbability * killProbabilityGrowthFactor, 1f);
 
         ColaTypes colaTypeToSpawn;
@@ -529,11 +607,12 @@ public class VileVendingMachineServer : EnemyAI
         netcodeController.SetIsItemOnHandClientRpc(_vendingMachineId, false);
     }
     
-    private static bool IsColliderAgainstWall(Collider collider)
-    {
-        return Physics.Raycast(collider.bounds.center, -collider.transform.forward, out RaycastHit hit, collider.bounds.size.z);
-    }
-    
+    /// <summary>
+    /// Checks if a collider is colliding with another collider
+    /// </summary>
+    /// <param name="collider">The collider to check</param>
+    /// <param name="layerMask">The layer mask of the colliders</param>
+    /// <returns>Whether the collider is colliding or not</returns>
     private bool IsColliderColliding(Collider collider, LayerMask layerMask)
     {
         #if DEBUG
@@ -549,6 +628,10 @@ public class VileVendingMachineServer : EnemyAI
         #endif
     }
 
+    /// <summary>
+    /// Checks whether the current moon is suitable for the spawning of a vending machine outside the fire exit
+    /// </summary>
+    /// <returns></returns>
     private bool IsFireExitAllowedOutside()
     {
         string[] allowedFireExitDoors =
@@ -559,7 +642,11 @@ public class VileVendingMachineServer : EnemyAI
         LogDebug($"Fire exit allowed outside: {allowedFireExitDoors.All(mapName => StartOfRound.Instance.currentLevel.sceneName == mapName)}");
         return allowedFireExitDoors.All(mapName => StartOfRound.Instance.currentLevel.sceneName == mapName);
     }
-
+    
+    /// <summary>
+    /// Checks whether the current moon is suitable for the spawning of a vending machine outside the fire exit, in the dungeon
+    /// </summary>
+    /// <returns></returns>
     private bool IsFireExitAllowedInside()
     {
         string[] allowedFireExitDoors =
@@ -643,19 +730,6 @@ public class VileVendingMachineServer : EnemyAI
             lineRenderer.SetPosition(i, new Vector3(x, y, z));
             angle += 360f / 50;
         }
-    }
-    
-    private EntranceTeleport GetRandomDoor()
-    {
-        EntranceTeleport[] doors = FindObjectsOfType<EntranceTeleport>().Where(t => t != null && t.exitPoint != null).ToArray();
-        // foreach (EntranceTeleport door in doors)
-        // {
-        //     DrawDebugHorizontalLineAtTransform(door.transform, Color.green);
-        //     DrawDebugHorizontalLineAtTransform(door.entrancePoint, Color.red);
-        //     DrawDebugLineAtTransformForward(door.transform, Color.blue);
-        // }
-        
-        return doors[UnityEngine.Random.Range(0, doors.Length - 1)];
     }
 
     private void PlacementFail()

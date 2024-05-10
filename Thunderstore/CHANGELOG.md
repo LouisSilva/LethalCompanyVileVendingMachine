@@ -1,3 +1,7 @@
+## 1.0.9
+* The vending machine should finally, not **ever**, spawn inside a wall.
+* Changed the power level to zero.
+
 ## 1.0.8
 * Fixed bug where the player could scan the plushie while its in their hand.
 * Added another config that lets the player decide what the vending machine determines as an expensive item.

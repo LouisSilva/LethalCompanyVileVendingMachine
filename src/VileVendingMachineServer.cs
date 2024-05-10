@@ -68,6 +68,7 @@ public class VileVendingMachineServer : EnemyAI
     [Space(5f)]
 #pragma warning disable 0649
     [SerializeField] private BoxCollider centreCollider;
+    [SerializeField] private BoxCollider relaxedCentreCollider;
     [SerializeField] private BoxCollider frontCollider;
     [SerializeField] private BoxCollider backCollider;
     [SerializeField] private BoxCollider floorCollider;
@@ -276,7 +277,7 @@ public class VileVendingMachineServer : EnemyAI
                     #if DEBUG
                     yield return new WaitForSeconds(0.2f);
                     #else
-                    yield return null;
+                    yield return new WaitForFixedUpdate();
                     #endif
                     
                     #if DEBUG
@@ -300,6 +301,7 @@ public class VileVendingMachineServer : EnemyAI
                 Vector3 startingPosition = transform.position;
 
                 // Iterate over both directions, to see if the vending machine can be placed (to the left or right)
+                int currentDirection = 1;
                 for (int j=0; j < 2; j++) 
                 {
                     LogDebug($"Iteration of left or right placement: {j+1} out of 2");
@@ -309,10 +311,10 @@ public class VileVendingMachineServer : EnemyAI
                     
                     // Second, move the vending machine out of the way of the door
                     const float initialDistanceFromDoor = 2.5f;
-                    int currentDirection = j == 0 ? startingDirection : startingDirection * -1;
+                    currentDirection = j == 0 ? startingDirection : startingDirection * -1;
                     transform.position += vectorB * (currentDirection * initialDistanceFromDoor);
                     LogDebug($"Moved vending machine {initialDistanceFromDoor} units from door for left/right placement");
-                    yield return null;
+                    yield return new WaitForFixedUpdate();
                     
                     // Now check if the vending machine is still in a valid position
                     // If it is, then try to move the vending machine a random distance away from the door, if there is space
@@ -340,7 +342,7 @@ public class VileVendingMachineServer : EnemyAI
                             #if DEBUG
                             yield return new WaitForSeconds(0.3f);
                             #else
-                            yield return null;
+                            yield return new WaitForFixedUpdate();
                             #endif
                             
                             // If the new position makes the vending machine spawn invalid, move back to the last valid position and stop moving
@@ -362,32 +364,34 @@ public class VileVendingMachineServer : EnemyAI
                             currentDistanceFromDoor += distanceIncrease;
                         }
                         
-                        // Move vending machine to the floor
-                        Vector3 floorRayStart = transform.position + Vector3.up * 0.5f;
-                        if (Physics.Raycast(floorRayStart, -Vector3.up, out RaycastHit hit, 8f,
-                                StartOfRound.Instance.collidersAndRoomMaskAndDefault))
+                        break;
+                    }
+                    
+                    // Use the relaxed centre collider
+                    // This will cause the vending machine to clip into walls, but it will be good enough
+                    else
+                    {
+                        if (IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault) &&
+                            !IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault) &&
+                            !IsColliderColliding(relaxedCentreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
                         {
-                            transform.position = new Vector3(transform.position.x,
-                                hit.point.y + floorCollider.transform.localPosition.y, transform.position.z);
+                            LogDebug("Using the relaxed centre collider worked, and a valid placement has been found");
+                            break;
                         }
                         
-                        // Placement was a success, finalize the details
-                        LeftOrRight finalDirectionFromDoor = currentDirection == 1 ? LeftOrRight.Left : LeftOrRight.Right;
-                        LogDebug($"Placement was a success, with position: {transform.position} and being in the {finalDirectionFromDoor} direction from the door.");
-                        StartCoroutine(PlacementSuccess(door.entranceId, finalDirectionFromDoor, (EntranceOrExit)i, callback));
-                        yield break;
+                        LogDebug("Using the relaxed centre collider did not help");
                     }
                     
                     // Current iteration failed
                     #if DEBUG
                     LogDebug($"Current iteration: {j+1} failed");
-                    LogDebug($"backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, mainCol: { IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}");
+                    LogDebug($"backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, mainCol: {IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, relaxedMainCol: {IsColliderColliding(relaxedCentreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}");
                     #endif
                     
                     #if DEBUG
                     yield return new WaitForSeconds(1f);
                     #else
-                    yield return null;
+                    yield return new WaitForFixedUpdate();
                     #endif
                     
                     if (j != 1) continue;
@@ -397,6 +401,21 @@ public class VileVendingMachineServer : EnemyAI
                     PlacementFail();
                     yield break;
                 }
+                
+                // Move vending machine to the floor
+                Vector3 floorRayStart = transform.position + Vector3.up * 0.5f;
+                if (Physics.Raycast(floorRayStart, -Vector3.up, out RaycastHit hit, 8f,
+                        StartOfRound.Instance.collidersAndRoomMaskAndDefault))
+                {
+                    transform.position = new Vector3(transform.position.x,
+                        hit.point.y + floorCollider.transform.localPosition.y, transform.position.z);
+                }
+                        
+                // Placement was a success, finalize the details
+                LeftOrRight finalDirectionFromDoor = currentDirection == 1 ? LeftOrRight.Left : LeftOrRight.Right;
+                LogDebug($"Placement was a success, with position: {transform.position} and being in the {finalDirectionFromDoor} direction from the door.");
+                StartCoroutine(PlacementSuccess(door.entranceId, finalDirectionFromDoor, (EntranceOrExit)i, callback));
+                yield break;
             }
         }
 
@@ -736,7 +755,7 @@ public class VileVendingMachineServer : EnemyAI
     {
         LogDebug("Vending machine could not be placed");
         VendingMachineRegistry.IsPlacementInProgress = false;
-        KillEnemyClientRpc(true);
+        KillEnemyServerRpc(true);
     }
 
     private void HandleStartAcceptItemAnimation(string receivedVendingMachineId)

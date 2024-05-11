@@ -1,3 +1,8 @@
+## 1.0.10
+* Added another config option to specify if you want the vending machine to use the relaxed collider if needed.
+* Fixed the bug where the list of doors wouldn't shuffle properly.
+* Fixed the bug where the fire exit config options weren't being used properly by the code.
+
 ## 1.0.9
 * The vending machine should finally, not **ever**, spawn inside a wall.
 * Changed the power level to zero.

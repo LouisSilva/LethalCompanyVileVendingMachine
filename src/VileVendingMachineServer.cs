@@ -184,14 +184,13 @@ public class VileVendingMachineServer : EnemyAI
         }
         
         VendingMachineRegistry.IsPlacementInProgress = true;
-        bool isFireExitAllowedOutside = IsFireExitAllowedOutside();
-        bool isFireExitAllowedInside = IsFireExitAllowedInside();
+        // bool isFireExitAllowedOutside = IsFireExitAllowedOutside();
+        // bool isFireExitAllowedInside = IsFireExitAllowedInside();
         
         EntranceTeleport[] doors = GetDoorTeleports();
         
         // Shuffle the doors
-        if (!VileVendingMachineConfig.Instance.AlwaysSpawnOutsideMainEntrance.Value)
-            doors = doors.OrderBy(x => Random.Range(int.MinValue, int.MaxValue)).ToArray();
+        if (!VileVendingMachineConfig.Instance.AlwaysSpawnOutsideMainEntrance.Value) Shuffle(doors);
         
         // Loops over all the doors on the outside, and inside the dungeon. The i values correspond to the EntranceOrExit enum
         for (int i = 0; i < 2; i++)
@@ -215,12 +214,12 @@ public class VileVendingMachineServer : EnemyAI
                     continue;
 
                 // Checks if a vending machine is blacklisted from spawning outside a fire exit on a certain map (to save time)
-                if (door.entranceId != 0 && (int)EntranceOrExit.Entrance == i && !isFireExitAllowedOutside)
-                    continue;
+                // if (door.entranceId != 0 && (int)EntranceOrExit.Entrance == i && !isFireExitAllowedOutside)
+                //     continue;
                 
                 // Checks if a vending machine is blacklisted from spawning inside a particular dungeon flow e.g. facility because there is no space 99% of the time
-                if (door.entranceId != 0 && (int)EntranceOrExit.Exit == i && !isFireExitAllowedInside)
-                    continue;
+                // if (door.entranceId != 0 && (int)EntranceOrExit.Exit == i && !isFireExitAllowedInside)
+                //     continue;
 
                 if (VendingMachineRegistry.IsDoorOccupied(door.entranceId, (EntranceOrExit)i))
                 {
@@ -369,7 +368,7 @@ public class VileVendingMachineServer : EnemyAI
                     
                     // Use the relaxed centre collider
                     // This will cause the vending machine to clip into walls, but it will be good enough
-                    else
+                    if (VileVendingMachineConfig.Instance.UseRelaxedColliderIfNeeded.Value)
                     {
                         if (IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault) &&
                             !IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault) &&
@@ -678,7 +677,52 @@ public class VileVendingMachineServer : EnemyAI
         return allowedFireExitDoors.All(dungeonName =>
             RoundManager.Instance.dungeonGenerator.Generator.DungeonFlow.name == dungeonName);
     }
+
+    private void PlacementFail()
+    {
+        LogDebug("Vending machine could not be placed");
+        VendingMachineRegistry.IsPlacementInProgress = false;
+        KillEnemyServerRpc(true);
+    }
+
+    private void HandleStartAcceptItemAnimation(string receivedVendingMachineId)
+    {
+        if (_vendingMachineId != receivedVendingMachineId) return;
+        StartCoroutine(AcceptItem());
+    }
+
+    private void HandleChangeTargetPlayer(string receivedVendingMachineId, ulong playerClientId)
+    {
+        if (_vendingMachineId != receivedVendingMachineId) return;
+        targetPlayer = playerClientId == 69420 ? null : StartOfRound.Instance.allPlayerScripts[playerClientId];
+    }
     
+    /// <summary>
+    /// Shuffles an array of objects
+    /// </summary>
+    /// <param name="array">The array to shuffle</param>
+    /// <typeparam name="T">The object type in the array</typeparam>
+    private static void Shuffle<T>(IList<T> array)
+    {
+        int n = array.Count;
+        for (int i = 0; i < n; i++)
+        {
+            // Pick a new index higher than the current position
+            int j = i + Random.Range(0, n - i);
+            // Swap elements at indices i and j
+            (array[i], array[j]) = (array[j], array[i]);
+        }
+    }
+    
+    private void LogDebug(string msg)
+    {
+        #if DEBUG
+        if (!IsServer) return;
+        _mls?.LogInfo(msg);
+        #endif
+    }
+    
+    // Debug functions
     private void DrawDebugHorizontalLineAtTransform(Transform transform, Color colour = default)
     {
         GameObject lineObj = new("ForwardLine");
@@ -749,32 +793,5 @@ public class VileVendingMachineServer : EnemyAI
             lineRenderer.SetPosition(i, new Vector3(x, y, z));
             angle += 360f / 50;
         }
-    }
-
-    private void PlacementFail()
-    {
-        LogDebug("Vending machine could not be placed");
-        VendingMachineRegistry.IsPlacementInProgress = false;
-        KillEnemyServerRpc(true);
-    }
-
-    private void HandleStartAcceptItemAnimation(string receivedVendingMachineId)
-    {
-        if (_vendingMachineId != receivedVendingMachineId) return;
-        StartCoroutine(AcceptItem());
-    }
-
-    private void HandleChangeTargetPlayer(string receivedVendingMachineId, ulong playerClientId)
-    {
-        if (_vendingMachineId != receivedVendingMachineId) return;
-        targetPlayer = playerClientId == 69420 ? null : StartOfRound.Instance.allPlayerScripts[playerClientId];
-    }
-    
-    private void LogDebug(string msg)
-    {
-        #if DEBUG
-        if (!IsServer) return;
-        _mls?.LogInfo(msg);
-        #endif
     }
 }

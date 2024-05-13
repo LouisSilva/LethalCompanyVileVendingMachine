@@ -1,3 +1,7 @@
+## 1.0.11
+* Added way better spawn rate config.
+* Added BMX Lobby Compatibility as a soft dependency.
+
 ## 1.0.10
 * Added another config option to specify if you want the vending machine to use the relaxed collider if needed.
 * Fixed the bug where the list of doors wouldn't shuffle properly.

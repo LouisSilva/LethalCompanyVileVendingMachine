@@ -5,16 +5,16 @@ namespace LethalCompanyVileVendingMachine;
 
 public class VileVendingMachineConfig : SyncedInstance<VileVendingMachineConfig>
 {
-    public readonly ConfigEntry<int> SpawnRate;
+    public readonly ConfigEntry<bool> VendingMachineEnabled;
+    public readonly ConfigEntry<string> VendingMachineSpawnRarity;
     public readonly ConfigEntry<int> MaxAmount;
-    public readonly ConfigEntry<Levels.LevelTypes> SpawnLevelTypes;
     public readonly ConfigEntry<bool> CanSpawnAtMainDoorMaster;
     public readonly ConfigEntry<bool> CanSpawnAtFireExitMaster;
     public readonly ConfigEntry<bool> CanSpawnOutsideMaster;
     public readonly ConfigEntry<bool> CanSpawnInsideMaster;
     public readonly ConfigEntry<bool> AlwaysSpawnOutsideMainEntrance;
     public readonly ConfigEntry<bool> UseRelaxedColliderIfNeeded;
-        
+    
     public readonly ConfigEntry<float> InitialKillProbability;
     public readonly ConfigEntry<float> KillProbabilityGrowthFactor;
     public readonly ConfigEntry<float> KillProbabilityReductionFactor;
@@ -34,12 +34,19 @@ public class VileVendingMachineConfig : SyncedInstance<VileVendingMachineConfig>
     public VileVendingMachineConfig(ConfigFile cfg)
     {
         InitInstance(this);
-            
-        SpawnRate = cfg.Bind(
+        
+        VendingMachineEnabled = cfg.Bind(
             "Vending Machine Spawn Values",
-            "Spawn Rate",
-            20,
-            "The spawn rate of the vending machine."
+            "Vending Machine Enabled Enabled",
+            true,
+            "Whether the Vile Vending Machine is enabled (will spawn in games)."
+        );
+        
+        VendingMachineSpawnRarity = cfg.Bind(
+            "Vending Machine Spawn Values", 
+            "Vending Machine Spawn Rarity",
+            "All:30",
+            "Spawn weight of the Vending Machine on all moons. You can to add to it any moon, just follow the format (also needs LLL installed for LE moons to work with this config)."
         );
             
         MaxAmount = cfg.Bind(
@@ -47,13 +54,6 @@ public class VileVendingMachineConfig : SyncedInstance<VileVendingMachineConfig>
             "Max Amount",
             1,
             "The max amount of vending machines."
-        );
-            
-        SpawnLevelTypes = cfg.Bind(
-            "Vending Machine Spawn Values",
-            "Spawn Level",
-            Levels.LevelTypes.All,
-            "The LevelTypes that the vending machine spawns in."
         );
 
         CanSpawnAtMainDoorMaster = cfg.Bind(

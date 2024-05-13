@@ -1,12 +1,17 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.Serialization.Formatters.Binary;
 using BepInEx;
 using BepInEx.Logging;
 using GameNetcodeStuff;
 using HarmonyLib;
 using LethalLib.Modules;
+using LobbyCompatibility.Enums;
+using LobbyCompatibility.Features;
 using Unity.Collections;
 using UnityEngine;
 using Unity.Netcode;
@@ -18,11 +23,12 @@ namespace LethalCompanyVileVendingMachine;
 [BepInDependency(LethalLib.Plugin.ModGUID)]
 [BepInDependency("linkoid-DissonanceLagFix-1.0.0", BepInDependency.DependencyFlags.SoftDependency)]
 [BepInDependency("mattymatty-AsyncLoggers-1.6.2", BepInDependency.DependencyFlags.SoftDependency)]
+[BepInDependency("BMX.LobbyCompatibility", BepInDependency.DependencyFlags.SoftDependency)]
 public class VileVendingMachinePlugin : BaseUnityPlugin
 {
     public const string ModGuid = $"LCM_VileVendingMachine|{ModVersion}";
     private const string ModName = "Lethal Company Vile Vending Machine Mod";
-    private const string ModVersion = "1.0.10";
+    private const string ModVersion = "1.0.11";
 
     private readonly Harmony _harmony = new(ModGuid);
 
@@ -41,6 +47,7 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
     private void Awake()
     {
         if (_instance == null) _instance = this;
+        if (LobbyCompatibilityChecker.Enabled) LobbyCompatibilityChecker.Init();
 
         InitializeNetworkStuff();
             
@@ -74,14 +81,7 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
 
         NetworkPrefabs.RegisterNetworkPrefab(_vileVendingMachineEnemyType.enemyPrefab);
         Utilities.FixMixerGroups(_vileVendingMachineEnemyType.enemyPrefab);
-        Enemies.RegisterEnemy(
-            _vileVendingMachineEnemyType,
-            Mathf.Clamp(VileVendingMachineConfig.Instance.SpawnRate.Value, 0, 999),
-            VileVendingMachineConfig.Instance.SpawnLevelTypes.Value,
-            Enemies.SpawnType.Default,
-            vileVendingMachineTerminalNode,
-            vileVendingMachineTerminalKeyword
-        );
+        RegisterEnemyWithConfig(VileVendingMachineConfig.Instance.VendingMachineEnabled.Value, VileVendingMachineConfig.Instance.VendingMachineSpawnRarity.Value, _vileVendingMachineEnemyType, vileVendingMachineTerminalNode, vileVendingMachineTerminalKeyword);
     }
 
     private void SetupCompanyCola()
@@ -131,7 +131,16 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
         
     private static void InitializeNetworkStuff()
     {
-        Type[] types = Assembly.GetExecutingAssembly().GetTypes();
+        IEnumerable<Type> types;
+        try
+        {
+            types = Assembly.GetExecutingAssembly().GetTypes();
+        }
+        catch (ReflectionTypeLoadException e)
+        {
+            types = e.Types.Where(t => t != null);
+        }
+        
         foreach (Type type in types)
         {
             MethodInfo[] methods = type.GetMethods(BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
@@ -145,11 +154,40 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
             }
         }
     }
+    
+    private void RegisterEnemyWithConfig(bool enemyEnabled, string configMoonRarity, EnemyType enemy, TerminalNode terminalNode, TerminalKeyword terminalKeyword) {
+        if (enemyEnabled) { 
+            (Dictionary<Levels.LevelTypes, int> spawnRateByLevelType, Dictionary<string, int> spawnRateByCustomLevelType) = ConfigParsing(configMoonRarity);
+            Enemies.RegisterEnemy(enemy, spawnRateByLevelType, spawnRateByCustomLevelType, terminalNode, terminalKeyword);
+                
+        } else {
+            Enemies.RegisterEnemy(enemy, 0, Levels.LevelTypes.All, terminalNode, terminalKeyword);
+        }
+    }
+
+    // Got from the giant specimens mod
+    private static (Dictionary<Levels.LevelTypes, int> spawnRateByLevelType, Dictionary<string, int> spawnRateByCustomLevelType) ConfigParsing(string configMoonRarity) {
+        Dictionary<Levels.LevelTypes, int> spawnRateByLevelType = new();
+        Dictionary<string, int> spawnRateByCustomLevelType = new();
+        foreach (string entry in configMoonRarity.Split(',').Select(s => s.Trim())) {
+            string[] entryParts = entry.Split(':');
+
+            if (entryParts.Length != 2) continue;
+            string name = entryParts[0];
+            if (!int.TryParse(entryParts[1], out int spawnrate)) continue;
+
+            if (Enum.TryParse(name, true, out Levels.LevelTypes levelType)) {
+                spawnRateByLevelType[levelType] = spawnrate;
+                Mls.LogDebug($"Registered spawn rate for level type {levelType} to {spawnrate}");
+            } else {
+                spawnRateByCustomLevelType[name] = spawnrate;
+                Mls.LogDebug($"Registered spawn rate for custom level type {name} to {spawnrate}");
+            }
+        }
+        return (spawnRateByLevelType, spawnRateByCustomLevelType);
+    }
 }
 
-
-    
-    
 [Serializable]
 public class SyncedInstance<T>
 {
@@ -299,5 +337,15 @@ internal static class Assets
         {
             VileVendingMachinePlugin.Mls.LogError("Failed to load vilevendingmachine bundle");
         }
+    }
+}
+
+public static class LobbyCompatibilityChecker 
+{
+    public static bool Enabled => BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("BMX.LobbyCompatibility");
+
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.NoOptimization)]
+    public static void Init() {
+        PluginHelper.RegisterPlugin(PluginInfo.PLUGIN_GUID, Version.Parse(PluginInfo.PLUGIN_VERSION), CompatibilityLevel.Everyone, VersionStrictness.Patch);
     }
 }

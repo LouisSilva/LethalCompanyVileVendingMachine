@@ -262,7 +262,10 @@ public class VileVendingMachineServer : EnemyAI
                     ? door.entrancePoint.position
                     : door.exitPoint.position;
                 
+                // VectorA is a vector representing a line that goes through the centre of the door
                 Vector3 vectorA = teleportPosition - doorPosition;
+                
+                // VectorB is the perpendicular vector of VectorA
                 Vector3 vectorB = Vector3.Cross(vectorA, Vector3.up).normalized;
 
                 vectorA.y = 0;
@@ -274,7 +277,7 @@ public class VileVendingMachineServer : EnemyAI
                 for (int k=0; k < 300; k++)
                 {
                     #if DEBUG
-                    yield return new WaitForSeconds(0.2f);
+                    yield return new WaitForSeconds(0.14f);
                     #else
                     yield return new WaitForFixedUpdate();
                     #endif
@@ -292,8 +295,11 @@ public class VileVendingMachineServer : EnemyAI
                     stageOneSuccess = true;
                     break;
                 }
-                
-                if (!stageOneSuccess) PlacementFail();
+
+                if (!stageOneSuccess)
+                {
+                    continue;
+                }
                 
                 // Randomly pick either left or right
                 int startingDirection = Random.Range(0, 2) == 0 ? 1 : -1;
@@ -301,6 +307,7 @@ public class VileVendingMachineServer : EnemyAI
 
                 // Iterate over both directions, to see if the vending machine can be placed (to the left or right)
                 int currentDirection = 1;
+                bool stageTwoSuccess = false;
                 for (int j=0; j < 2; j++) 
                 {
                     LogDebug($"Iteration of left or right placement: {j+1} out of 2");
@@ -323,7 +330,8 @@ public class VileVendingMachineServer : EnemyAI
                         !IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
                     {
                         LogDebug("After initial movement, the placement is still valid");
-                        
+                        stageTwoSuccess = true;
+                            
                         #if DEBUG
                         LogDebug($"backCol: {IsColliderColliding(backCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, mainCol: { IsColliderColliding(centreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}, frontCol: {IsColliderColliding(frontCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault)}");
                         #endif
@@ -339,7 +347,7 @@ public class VileVendingMachineServer : EnemyAI
                         {
                             // Don't hog the thread
                             #if DEBUG
-                            yield return new WaitForSeconds(0.3f);
+                            yield return new WaitForSeconds(0.2f);
                             #else
                             yield return new WaitForFixedUpdate();
                             #endif
@@ -375,6 +383,7 @@ public class VileVendingMachineServer : EnemyAI
                             !IsColliderColliding(relaxedCentreCollider, StartOfRound.Instance.collidersAndRoomMaskAndDefault))
                         {
                             LogDebug("Using the relaxed centre collider worked, and a valid placement has been found");
+                            stageTwoSuccess = true;
                             break;
                         }
                         
@@ -392,13 +401,14 @@ public class VileVendingMachineServer : EnemyAI
                     #else
                     yield return new WaitForFixedUpdate();
                     #endif
-                    
-                    if (j != 1) continue;
-                    
-                    // If both directions have been tried, abort placement
-                    LogDebug("Both the left and right side has been tried with no success, aborting placement.");
+                }
+
+                if (!stageTwoSuccess)
+                {
+                    // If both directions have been tried, abort placement and try another door
+                    LogDebug("Both the left and right side has been tried with no success, aborting placement at this current door.");
                     PlacementFail();
-                    yield break;
+                    continue;
                 }
                 
                 // Move vending machine to the floor
@@ -683,6 +693,7 @@ public class VileVendingMachineServer : EnemyAI
         LogDebug("Vending machine could not be placed");
         VendingMachineRegistry.IsPlacementInProgress = false;
         KillEnemyServerRpc(true);
+        Destroy(this);
     }
 
     private void HandleStartAcceptItemAnimation(string receivedVendingMachineId)

@@ -53,7 +53,7 @@ public class VileVendingMachineConfig : SyncedInstance<VileVendingMachineConfig>
             "Vending Machine Spawn Values",
             "Max Amount",
             1,
-            "The max amount of vending machines."
+            "The max amount of vending machines that can spawn."
         );
 
         CanSpawnAtMainDoorMaster = cfg.Bind(

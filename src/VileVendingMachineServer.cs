@@ -175,19 +175,40 @@ public class VileVendingMachineServer : EnemyAI
     /// <returns></returns>
     private IEnumerator PlaceVendingMachine(Action callback = null)
     {
+        // Wait until another vending machine has finished spawning to avoid the vending machines colliding with each-other and messing up the spawning algorithm
         int checksDone = 0;
-        while (VendingMachineRegistry.IsPlacementInProgress && checksDone < 20)
+        while (VendingMachineRegistry.IsPlacementInProgress)
         {
-            checksDone++;
             LogDebug($"is placement in progress?: {VendingMachineRegistry.IsPlacementInProgress}, vending machines in registry: {VendingMachineRegistry.GetVendingMachineRegistryPrint()}");
-            yield return new WaitForSeconds(1);
+            if (checksDone >= 20)
+            {
+                PlacementFail();
+                yield break;
+            }
+            
+            checksDone++;
+            yield return new WaitForSeconds(3);
         }
         
         VendingMachineRegistry.IsPlacementInProgress = true;
-        // bool isFireExitAllowedOutside = IsFireExitAllowedOutside();
-        // bool isFireExitAllowedInside = IsFireExitAllowedInside();
+        EntranceTeleport[] doors = [];
         
-        EntranceTeleport[] doors = GetDoorTeleports();
+        // When the vending machine is spawned right at the beginning of the round, the entrance teleports haven't loaded in yet, so we need to wait a bit
+        checksDone = 0;
+        while (doors.Length == 0)
+        {
+            if (checksDone >= 5)
+            {
+                PlacementFail();
+                yield break;
+            }
+            
+            doors = GetDoorTeleports();
+            LogDebug("There are no entrance teleports available yet.");
+            checksDone++;
+            
+            yield return new WaitForSeconds(5);
+        }
         
         // Shuffle the doors
         if (!VileVendingMachineConfig.Instance.AlwaysSpawnOutsideMainEntrance.Value) Shuffle(doors);
@@ -212,14 +233,6 @@ public class VileVendingMachineServer : EnemyAI
                 // Checks if a vending machine can spawn at a fire exit, inside or outside
                 if (!VileVendingMachineConfig.Instance.CanSpawnAtFireExitMaster.Value && door.entranceId != 0)
                     continue;
-
-                // Checks if a vending machine is blacklisted from spawning outside a fire exit on a certain map (to save time)
-                // if (door.entranceId != 0 && (int)EntranceOrExit.Entrance == i && !isFireExitAllowedOutside)
-                //     continue;
-                
-                // Checks if a vending machine is blacklisted from spawning inside a particular dungeon flow e.g. facility because there is no space 99% of the time
-                // if (door.entranceId != 0 && (int)EntranceOrExit.Exit == i && !isFireExitAllowedInside)
-                //     continue;
 
                 if (VendingMachineRegistry.IsDoorOccupied(door.entranceId, (EntranceOrExit)i))
                 {
@@ -267,7 +280,8 @@ public class VileVendingMachineServer : EnemyAI
                 
                 // VectorB is the perpendicular vector of VectorA
                 Vector3 vectorB = Vector3.Cross(vectorA, Vector3.up).normalized;
-
+                
+                // Move the vending machine a little bit behind the door, and rotate the vending machine so it's facing opposite the door
                 vectorA.y = 0;
                 transform.position = doorPosition + vectorA.normalized * -0.1f;
                 transform.rotation = Quaternion.LookRotation(vectorA);
@@ -657,37 +671,8 @@ public class VileVendingMachineServer : EnemyAI
     }
 
     /// <summary>
-    /// Checks whether the current moon is suitable for the spawning of a vending machine outside the fire exit
+    /// Handles the events which should occur when the placement of the vending machine has failed
     /// </summary>
-    /// <returns></returns>
-    private bool IsFireExitAllowedOutside()
-    {
-        string[] allowedFireExitDoors =
-        [
-            ""
-        ];
-
-        LogDebug($"Fire exit allowed outside: {allowedFireExitDoors.All(mapName => StartOfRound.Instance.currentLevel.sceneName == mapName)}");
-        return allowedFireExitDoors.All(mapName => StartOfRound.Instance.currentLevel.sceneName == mapName);
-    }
-    
-    /// <summary>
-    /// Checks whether the current moon is suitable for the spawning of a vending machine outside the fire exit, in the dungeon
-    /// </summary>
-    /// <returns></returns>
-    private bool IsFireExitAllowedInside()
-    {
-        string[] allowedFireExitDoors =
-        [
-            ""
-        ];
-
-        LogDebug($"Fire exit allowed inside: {allowedFireExitDoors.All(dungeonName =>
-            RoundManager.Instance.dungeonGenerator.Generator.DungeonFlow.name == dungeonName)}");
-        return allowedFireExitDoors.All(dungeonName =>
-            RoundManager.Instance.dungeonGenerator.Generator.DungeonFlow.name == dungeonName);
-    }
-
     private void PlacementFail()
     {
         LogDebug("Vending machine could not be placed");
@@ -731,78 +716,5 @@ public class VileVendingMachineServer : EnemyAI
         if (!IsServer) return;
         _mls?.LogInfo(msg);
         #endif
-    }
-    
-    // Debug functions
-    private void DrawDebugHorizontalLineAtTransform(Transform transform, Color colour = default)
-    {
-        GameObject lineObj = new("ForwardLine");
-        lineObj.transform.position = transform.position;
-        
-        LineRenderer lineRenderer = lineObj.AddComponent<LineRenderer>();
-        lineRenderer.material = new Material(Shader.Find("Sprites/Default"));
-        lineRenderer.widthMultiplier = 0.1f;
-        lineRenderer.positionCount = 2;
-        lineRenderer.useWorldSpace = true;
-        lineRenderer.startColor = colour;
-        lineRenderer.endColor = colour;
-        
-        lineRenderer.SetPosition(0, transform.position - transform.right * 5);
-        lineRenderer.SetPosition(1, transform.position + transform.right * 5);
-    }
-    
-    private void DrawDebugLineAtTransformWithDirection(Transform transform, Vector3 direction, Color colour = default)
-    {
-        GameObject lineObj = new("ForwardLine");
-        lineObj.transform.position = transform.position;
-        
-        LogDebug("Drawling line");
-        LineRenderer lineRenderer = lineObj.AddComponent<LineRenderer>();
-        lineRenderer.material = new Material(Shader.Find("Sprites/Default"));
-        lineRenderer.widthMultiplier = 0.1f;
-        lineRenderer.positionCount = 4;
-        lineRenderer.useWorldSpace = true;
-        lineRenderer.startColor = colour;
-        lineRenderer.endColor = colour;
-        
-        Vector3 lineEnd = transform.position + direction * 8;
-        Vector3 arrowDirection = (lineEnd - transform.position).normalized;
-        const float arrowHeadLength = 1f; // Adjust as needed
-        const float arrowHeadAngle = 25.0f; // Adjust as needed
-
-        Vector3 left = Quaternion.LookRotation(arrowDirection) * Quaternion.Euler(0, 180 + arrowHeadAngle, 0) * new Vector3(0, 0, 1);
-        Vector3 right = Quaternion.LookRotation(arrowDirection) * Quaternion.Euler(0, 180 - arrowHeadAngle, 0) * new Vector3(0, 0, 1);
-        
-        lineRenderer.SetPosition(0, transform.position);
-        lineRenderer.SetPosition(1, lineEnd);
-        lineRenderer.SetPosition(2, lineEnd + left * arrowHeadLength);
-        lineRenderer.SetPosition(3, lineEnd + right * arrowHeadLength);
-    }
-    
-    private void DrawDebugCircleAtPosition(Vector3 position, Color color = default)
-    {
-        float angle = 20f;
-        const float circleRadius = 2f;
-        GameObject circleObj = new("Circle");
-        circleObj.transform.position = position;
-
-        LineRenderer lineRenderer = circleObj.AddComponent<LineRenderer>();
-        lineRenderer.material = new Material(Shader.Find("Sprites/Default"));
-        lineRenderer.widthMultiplier = 0.1f;
-        lineRenderer.positionCount = 51;
-        lineRenderer.useWorldSpace = true;
-        lineRenderer.startColor = color;
-        lineRenderer.endColor = color;
-        
-        
-        for (int i = 0; i <= 50; i++)
-        {
-            float x = position.x + Mathf.Sin(Mathf.Deg2Rad * angle) * circleRadius;
-            float z = position.z + Mathf.Cos(Mathf.Deg2Rad * angle) * circleRadius;
-            float y = position.y;
-            
-            lineRenderer.SetPosition(i, new Vector3(x, y, z));
-            angle += 360f / 50;
-        }
     }
 }

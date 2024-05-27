@@ -1,3 +1,6 @@
+## 1.0.12
+* Fixed bug where the vending machine wouldn't be able to spawn if it was spawned right at the beginning of the round (with its enemy type set to daytime for example).
+
 ## 1.0.11
 * Added way better spawn rate config.
 * Added BMX Lobby Compatibility as a soft dependency.

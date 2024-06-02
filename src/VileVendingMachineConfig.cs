@@ -37,7 +37,7 @@ public class VileVendingMachineConfig : SyncedInstance<VileVendingMachineConfig>
         
         VendingMachineEnabled = cfg.Bind(
             "Vending Machine Spawn Values",
-            "Vending Machine Enabled Enabled",
+            "Vending Machine Enabled",
             true,
             "Whether the Vile Vending Machine is enabled (will spawn in games)."
         );

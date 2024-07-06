@@ -26,10 +26,9 @@ public class CompanyColaBehaviour : PhysicsProp
         grabbable = true;
         grabbableToEnemies = true;
         
-        if (!IsServer)
+        if (IsServer)
         {
             _colaId = Guid.NewGuid().ToString();
-            _mls = Logger.CreateLogSource($"{VileVendingMachinePlugin.ModGuid} | Company Cola {_colaId}");
             SyncColaIdClientRpc(_colaId);
         }
     }
@@ -105,22 +104,14 @@ public class CompanyColaBehaviour : PhysicsProp
     [ClientRpc]
     public void SyncColaIdClientRpc(string colaId)
     {
-        if (IsServer) return;
         _colaId = colaId;
         _mls = Logger.CreateLogSource($"{VileVendingMachinePlugin.ModGuid} | Company Cola {_colaId}");
     }
 
     private void LogDebug(string msg)
     {
-        #if DEBUG
-        try
-        {
-            _mls.LogInfo(msg);
-        }
-        catch (Exception)
-        {
-        }
-            
-        #endif
+#if DEBUG
+        _mls?.LogInfo(msg);
+#endif
     }
 }

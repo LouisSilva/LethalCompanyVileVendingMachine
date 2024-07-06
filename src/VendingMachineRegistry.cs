@@ -1,10 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data;
+﻿using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using BepInEx.Logging;
 using HarmonyLib;
-using TMPro;
 using UnityEngine;
 
 namespace LethalCompanyVileVendingMachine;
@@ -96,6 +94,7 @@ public static class VendingMachineRegistry
 
     [HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ShipLeave))]
     [HarmonyPostfix]
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
     private static void ResetRegistryOnRoundEnd(StartOfRound __instance)
     {
         VendingMachines.Clear();

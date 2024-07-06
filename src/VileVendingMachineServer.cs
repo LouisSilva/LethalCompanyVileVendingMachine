@@ -87,6 +87,16 @@ public class VileVendingMachineServer : EnemyAI
         base.OnDestroy();
         VendingMachineRegistry.RemoveVendingMachine(_vendingMachineId);
     }
+    
+    /// <summary>
+    /// Subscribes to the needed network events when the vending machine is enabled.
+    /// </summary>
+    private void OnEnable()
+    {
+        netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
+        netcodeController.OnStartAcceptItemAnimation += HandleStartAcceptItemAnimation;
+        netcodeController.OnChangeTargetPlayer += HandleChangeTargetPlayer;
+    }
 
     /// <summary>
     /// Unsubscribes from the needed network events when the vending machine is disabled.
@@ -96,16 +106,6 @@ public class VileVendingMachineServer : EnemyAI
         netcodeController.OnDespawnHeldItem -= HandleDespawnHeldItem;
         netcodeController.OnStartAcceptItemAnimation -= HandleStartAcceptItemAnimation;
         netcodeController.OnChangeTargetPlayer -= HandleChangeTargetPlayer;
-    }
-
-    /// <summary>
-    /// Subscribes to the needed network events when the vending machine is enabled.
-    /// </summary>
-    private void OnEnable()
-    {
-        netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
-        netcodeController.OnStartAcceptItemAnimation += HandleStartAcceptItemAnimation;
-        netcodeController.OnChangeTargetPlayer += HandleChangeTargetPlayer;
     }
 
     /// <summary>
@@ -561,7 +561,6 @@ public class VileVendingMachineServer : EnemyAI
         colaBehaviour.isPartOfVendingMachine = true;
         colaBehaviour.grabbableToEnemies = false;
         colaBehaviour.fallTime = 1f;
-        
         
         colaBehaviour.SetScrapValue(colaScrapValue);
         colaBehaviour.UpdateScrapValue(colaScrapValue);

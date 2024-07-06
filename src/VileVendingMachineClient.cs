@@ -4,7 +4,6 @@ using GameNetcodeStuff;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.VFX;
-using Logger = UnityEngine.Logger;
 
 namespace LethalCompanyVileVendingMachine;
 
@@ -73,7 +72,6 @@ public class VileVendingMachineClient : MonoBehaviour
         netcodeController.OnInitializeConfigValues += HandleInitializeConfigValues;
         netcodeController.OnUpdateVendingMachineIdentifier += HandleUpdateVendingMachineIdentifier;
         netcodeController.OnDoAnimation += SetTrigger;
-        netcodeController.OnPlayerDiscardHeldObject += HandlePlayerDiscardHeldItem;
         netcodeController.OnChangeAnimationParameterBool += SetBool;
         netcodeController.OnPlaceItemInHand += HandlePlaceItemInHand;
         netcodeController.OnChangeTargetPlayer += HandleChangeTargetPlayer;
@@ -85,12 +83,11 @@ public class VileVendingMachineClient : MonoBehaviour
         netcodeController.OnSetIsItemOnHand += HandleSetIsItemOnHand;
     }
     
-    private void OnDestroy()
+    private void OnDisable()
     {
         netcodeController.OnInitializeConfigValues -= HandleInitializeConfigValues;
         netcodeController.OnUpdateVendingMachineIdentifier -= HandleUpdateVendingMachineIdentifier;
         netcodeController.OnDoAnimation -= SetTrigger;
-        netcodeController.OnPlayerDiscardHeldObject -= HandlePlayerDiscardHeldItem;
         netcodeController.OnChangeAnimationParameterBool -= SetBool;
         netcodeController.OnPlaceItemInHand -= HandlePlaceItemInHand;
         netcodeController.OnChangeTargetPlayer -= HandleChangeTargetPlayer;
@@ -125,6 +122,7 @@ public class VileVendingMachineClient : MonoBehaviour
     
     private void InteractVendingMachine(PlayerControllerB playerInteractor)
     {
+        if (playerInteractor == null) return;
         if (!playerInteractor.isHoldingObject) return;
         PlaceItemInHand(ref playerInteractor);
     }
@@ -137,7 +135,7 @@ public class VileVendingMachineClient : MonoBehaviour
         _isItemOnHand = true;
         
         if (GameNetworkManager.Instance.localPlayerController == playerInteractor) netcodeController.ChangeTargetPlayerServerRpc(_vendingMachineId, playerInteractor.actualClientId);
-        HandlePlayerDiscardHeldItem(_vendingMachineId, playerInteractor.actualClientId);
+        HandlePlayerDiscardHeldItem(playerInteractor.actualClientId);
         if (GameNetworkManager.Instance.localPlayerController == playerInteractor) netcodeController.StartAcceptItemAnimationServerRpc(_vendingMachineId);
     }
 
@@ -161,13 +159,12 @@ public class VileVendingMachineClient : MonoBehaviour
                 GameNetworkManager.Instance.localPlayerController.IncreaseFearLevelOverTime(0.8f);
             }
 
-            yield return new WaitForSeconds(0.1f);
+            yield return new WaitForSeconds(0.15f);
         }
     }
     
-    private void HandlePlayerDiscardHeldItem(string receivedVendingMachineId, ulong playerClientId)
+    private void HandlePlayerDiscardHeldItem(ulong playerClientId)
     {
-        if (_vendingMachineId != receivedVendingMachineId) return;
         _isItemOnHand = true;
 
         PlayerControllerB player = StartOfRound.Instance.allPlayerScripts[playerClientId];
@@ -476,7 +473,7 @@ public class VileVendingMachineClient : MonoBehaviour
         _vendingMachineId = receivedVendingMachineId;
         _mls?.Dispose();
         _mls = BepInEx.Logging.Logger.CreateLogSource(
-            $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine {_vendingMachineId}");
+            $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine Client {_vendingMachineId}");
         
         LogDebug("Successfully synced vending machine identifier");
     }

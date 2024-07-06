@@ -13,7 +13,6 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     public event Action<string> OnInitializeConfigValues;
     public event Action<string> OnUpdateVendingMachineIdentifier;
     public event Action<string, int> OnDoAnimation;
-    public event Action<string, ulong> OnPlayerDiscardHeldObject;
     public event Action<string, int, bool> OnChangeAnimationParameterBool;
     public event Action<string, NetworkObjectReference, Vector3> OnPlaceItemInHand;
     public event Action<string> OnDespawnHeldItem;
@@ -103,12 +102,6 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     public void PlaceItemInHandClientRpc(string receivedVendingMachineId, NetworkObjectReference networkObjectReference, Vector3 position)
     {
         OnPlaceItemInHand?.Invoke(receivedVendingMachineId, networkObjectReference, position);
-    }
-    
-    [ClientRpc]
-    public void PlayerDiscardHeldObjectClientRpc(string receivedVendingMachineId, ulong playerClientId)
-    {
-        OnPlayerDiscardHeldObject?.Invoke(receivedVendingMachineId, playerClientId);
     }
 
     [ClientRpc]

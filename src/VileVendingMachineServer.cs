@@ -52,8 +52,7 @@ public class VileVendingMachineServer : EnemyAI
     private ManualLogSource _mls;
     private string _vendingMachineId;
 
-    [Header("AI")]
-    [Space(5f)]
+    [Header("AI")] [Space(5f)]
     [SerializeField] private float initialKillProbability = 0.01f;
     [SerializeField] private float killProbabilityGrowthFactor = 4.64f;
     [SerializeField] private float killProbabilityReductionFactor = 0.25f;
@@ -63,10 +62,9 @@ public class VileVendingMachineServer : EnemyAI
     [SerializeField] private int crushedColaMinValue = 1;
     [SerializeField] private int crushedColaMaxValue = 5;
     private float _currentKillProbability = 0.01f;
-
-    [Header("Colliders and Transforms")]
-    [Space(5f)]
+    
 #pragma warning disable 0649
+    [Header("Colliders and Transforms")] [Space(5f)]
     [SerializeField] private BoxCollider centreCollider;
     [SerializeField] private BoxCollider relaxedCentreCollider;
     [SerializeField] private BoxCollider frontCollider;
@@ -78,24 +76,15 @@ public class VileVendingMachineServer : EnemyAI
     [Header("Controllers")] [Space(5f)]
     [SerializeField] private VileVendingMachineNetcodeController netcodeController;
 #pragma warning restore 0649
-
-    /// <summary>
-    /// Removes itself from the vending machine registry when the gameobject is destroyed.
-    /// </summary>
-    public override void OnDestroy()
-    {
-        base.OnDestroy();
-        VendingMachineRegistry.RemoveVendingMachine(_vendingMachineId);
-    }
+    
+    private bool _networkEventsSubscribed;
     
     /// <summary>
     /// Subscribes to the needed network events when the vending machine is enabled.
     /// </summary>
     private void OnEnable()
     {
-        netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
-        netcodeController.OnStartAcceptItemAnimation += HandleStartAcceptItemAnimation;
-        netcodeController.OnChangeTargetPlayer += HandleChangeTargetPlayer;
+        SubscribeToNetworkEvents();
     }
 
     /// <summary>
@@ -103,26 +92,16 @@ public class VileVendingMachineServer : EnemyAI
     /// </summary>
     private void OnDisable()
     {
-        netcodeController.OnDespawnHeldItem -= HandleDespawnHeldItem;
-        netcodeController.OnStartAcceptItemAnimation -= HandleStartAcceptItemAnimation;
-        netcodeController.OnChangeTargetPlayer -= HandleChangeTargetPlayer;
+        UnsubscribeFromNetworkEvents();
     }
-
+    
     /// <summary>
-    /// Initializes all the config values.
+    /// Removes itself from the vending machine registry when the gameobject is destroyed.
     /// </summary>
-    private void InitializeConfigValues()
+    public override void OnDestroy()
     {
-        initialKillProbability = Mathf.Clamp(VileVendingMachineConfig.Instance.InitialKillProbability.Value, 0f, 1f);
-        killProbabilityGrowthFactor = Mathf.Clamp(VileVendingMachineConfig.Instance.KillProbabilityGrowthFactor.Value, 0f, float.MaxValue);
-        killProbabilityReductionFactor = Mathf.Clamp(VileVendingMachineConfig.Instance.KillProbabilityReductionFactor.Value, 0f, 1f);
-        companyColaMinValue = Mathf.Clamp(VileVendingMachineConfig.Instance.ColaMinValue.Value, 0, int.MaxValue);
-        companyColaMaxValue = Mathf.Clamp(VileVendingMachineConfig.Instance.ColaMaxValue.Value, 0, int.MaxValue);
-        crushedColaMinValue = Mathf.Clamp(VileVendingMachineConfig.Instance.CrushedColaMinValue.Value, 0, int.MaxValue);
-        crushedColaMaxValue = Mathf.Clamp(VileVendingMachineConfig.Instance.CrushedColaMaxValue.Value, 0, int.MaxValue);
-        expensiveItemValue = Mathf.Clamp(VileVendingMachineConfig.Instance.ExpensiveItemValue.Value, -1, int.MaxValue);
-        
-        if (expensiveItemValue == -1) expensiveItemValue = companyColaMaxValue;
+        VendingMachineRegistry.RemoveVendingMachine(_vendingMachineId);
+        base.OnDestroy();
     }
 
     public override void Start()
@@ -147,18 +126,17 @@ public class VileVendingMachineServer : EnemyAI
         agent.updatePosition = false;
         
         // Make the vending machine go invisible when its spawning
-        #if !DEBUG
-        netcodeController.SetMeshEnabledClientRpc(_vendingMachineId, false);
+        //#if !DEBUG
+        netcodeController.MeshEnabled.Value = false;
         EnableEnemyMesh(false);
-        #endif
+        //#endif
 
         try
         {
             if (IsServer)
                 StartCoroutine(PlaceVendingMachine(() =>
                 {
-                    netcodeController.ChangeAnimationParameterBoolClientRpc(_vendingMachineId,
-                        VileVendingMachineClient.ArmAccept, true);
+                    netcodeController.SetAnimationTriggerClientRpc(_vendingMachineId, VileVendingMachineClient.ArmAccept);
                 }));
         }
         catch (Exception)
@@ -166,6 +144,8 @@ public class VileVendingMachineServer : EnemyAI
             VendingMachineRegistry.IsPlacementInProgress = false;
             throw;
         }
+
+        netcodeController.TargetPlayerClientId.Value = 69420;
     }
 
     /// <summary>
@@ -180,7 +160,7 @@ public class VileVendingMachineServer : EnemyAI
         while (VendingMachineRegistry.IsPlacementInProgress)
         {
             LogDebug($"is placement in progress?: {VendingMachineRegistry.IsPlacementInProgress}, vending machines in registry: {VendingMachineRegistry.GetVendingMachineRegistryPrint()}");
-            if (checksDone >= 20)
+            if (checksDone >= 30)
             {
                 PlacementFail();
                 yield break;
@@ -197,7 +177,7 @@ public class VileVendingMachineServer : EnemyAI
         checksDone = 0;
         while (doors.Length == 0)
         {
-            if (checksDone >= 5)
+            if (checksDone >= 30)
             {
                 PlacementFail();
                 yield break;
@@ -207,7 +187,7 @@ public class VileVendingMachineServer : EnemyAI
             LogDebug("There are no entrance teleports available yet.");
             checksDone++;
             
-            yield return new WaitForSeconds(5);
+            yield return new WaitForSeconds(2);
         }
         
         // Shuffle the doors
@@ -240,7 +220,7 @@ public class VileVendingMachineServer : EnemyAI
                 }
 
                 // See if there is a cached placement for this map
-                #if !DEBUG
+                //#if !DEBUG
                 if (StoredViablePlacements.TryGetValue(StartOfRound.Instance.currentLevel.sceneName, out List<Tuple<int, LeftOrRight, Vector3, Quaternion>> placement))
                 {
                     foreach (Tuple<int, LeftOrRight, Vector3, Quaternion> placementTuple in placement.Where(
@@ -257,7 +237,7 @@ public class VileVendingMachineServer : EnemyAI
                         yield break;
                     }
                 }
-                #endif
+                //#endif
                 // If the using the cache stuff didn't work, then try spawning it normally
                 
                 // Gets the transform of the door. It takes into account whether the current door is an entrance or exit
@@ -593,7 +573,7 @@ public class VileVendingMachineServer : EnemyAI
             grabbableObject.Despawn();
         }
 
-        netcodeController.SetIsItemOnHandClientRpc(_vendingMachineId, false);
+        netcodeController.IsItemOnHand.Value = false;
     }
 
     /// <summary>
@@ -602,9 +582,8 @@ public class VileVendingMachineServer : EnemyAI
     /// <returns></returns>
     private IEnumerator AcceptItem()
     {
-        if (!IsServer) yield break;
         yield return new WaitForSeconds(0.1f);
-        netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.ArmRetract);
+        netcodeController.SetAnimationTriggerClientRpc(_vendingMachineId, VileVendingMachineClient.ArmRetract);
 
         // Get the scan node properties
         int heldItemValue = 20;
@@ -615,7 +594,7 @@ public class VileVendingMachineServer : EnemyAI
             heldItemValue = heldItemProperties.scrapValue;
             heldItemName = heldItemProperties.headerText;
         }
-        LogDebug(heldItemName);
+        LogDebug($"Item retrieved: {heldItemName ?? "null"}");
         
         yield return new WaitForSeconds(3f);
         
@@ -628,11 +607,11 @@ public class VileVendingMachineServer : EnemyAI
         if (Random.value < _currentKillProbability) // kill player
         {
             _currentKillProbability = initialKillProbability;
-            netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.ArmGrab);
+            netcodeController.SetAnimationTriggerClientRpc(_vendingMachineId, VileVendingMachineClient.ArmGrab);
 
             // kill player with animation event
             yield return new WaitForSeconds(2.5f);
-            netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.Grind);
+            netcodeController.SetAnimationTriggerClientRpc(_vendingMachineId, VileVendingMachineClient.Grind);
             yield return new WaitForSeconds(4);
             colaTypeToSpawn = ColaTypes.Crushed;
         }
@@ -641,11 +620,11 @@ public class VileVendingMachineServer : EnemyAI
         SpawnCola(colaTypeToSpawn);
         
         yield return new WaitForSeconds(0.5f);
-        netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.Dispense);
+        netcodeController.SetAnimationTriggerClientRpc(_vendingMachineId, VileVendingMachineClient.Dispense);
         yield return new WaitForSeconds(2);
         
-        netcodeController.DoAnimationClientRpc(_vendingMachineId, VileVendingMachineClient.ArmAccept);
-        netcodeController.SetIsItemOnHandClientRpc(_vendingMachineId, false);
+        netcodeController.SetAnimationTriggerClientRpc(_vendingMachineId, VileVendingMachineClient.ArmAccept);
+        netcodeController.IsItemOnHand.Value = false;
     }
     
     /// <summary>
@@ -683,13 +662,57 @@ public class VileVendingMachineServer : EnemyAI
     private void HandleStartAcceptItemAnimation(string receivedVendingMachineId)
     {
         if (_vendingMachineId != receivedVendingMachineId) return;
+        if (!IsServer) return;
         StartCoroutine(AcceptItem());
     }
 
-    private void HandleChangeTargetPlayer(string receivedVendingMachineId, ulong playerClientId)
+    private void HandleTargetPlayerChanged(ulong oldValue, ulong newValue)
     {
-        if (_vendingMachineId != receivedVendingMachineId) return;
-        targetPlayer = playerClientId == 69420 ? null : StartOfRound.Instance.allPlayerScripts[playerClientId];
+        targetPlayer = newValue == 69420 ? null : StartOfRound.Instance.allPlayerScripts[newValue];
+        LogDebug(targetPlayer != null
+            ? $"Changed target player to {targetPlayer.playerUsername}"
+            : "Changed target player to null");
+    }
+    
+    /// <summary>
+    /// Initializes all the config values.
+    /// </summary>
+    private void InitializeConfigValues()
+    {
+        initialKillProbability = Mathf.Clamp(VileVendingMachineConfig.Instance.InitialKillProbability.Value, 0f, 1f);
+        killProbabilityGrowthFactor = Mathf.Clamp(VileVendingMachineConfig.Instance.KillProbabilityGrowthFactor.Value, 0f, float.MaxValue);
+        killProbabilityReductionFactor = Mathf.Clamp(VileVendingMachineConfig.Instance.KillProbabilityReductionFactor.Value, 0f, 1f);
+        companyColaMinValue = Mathf.Clamp(VileVendingMachineConfig.Instance.ColaMinValue.Value, 0, int.MaxValue);
+        companyColaMaxValue = Mathf.Clamp(VileVendingMachineConfig.Instance.ColaMaxValue.Value, 0, int.MaxValue);
+        crushedColaMinValue = Mathf.Clamp(VileVendingMachineConfig.Instance.CrushedColaMinValue.Value, 0, int.MaxValue);
+        crushedColaMaxValue = Mathf.Clamp(VileVendingMachineConfig.Instance.CrushedColaMaxValue.Value, 0, int.MaxValue);
+        expensiveItemValue = Mathf.Clamp(VileVendingMachineConfig.Instance.ExpensiveItemValue.Value, -1, int.MaxValue);
+        
+        if (expensiveItemValue == -1) expensiveItemValue = companyColaMaxValue;
+    }
+
+    private void SubscribeToNetworkEvents()
+    {
+        if (!IsServer || _networkEventsSubscribed) return;
+        
+        netcodeController.OnDespawnHeldItem += HandleDespawnHeldItem;
+        netcodeController.OnStartAcceptItemAnimation += HandleStartAcceptItemAnimation;
+
+        netcodeController.TargetPlayerClientId.OnValueChanged += HandleTargetPlayerChanged;
+
+        _networkEventsSubscribed = true;
+    }
+
+    private void UnsubscribeFromNetworkEvents()
+    {
+        if (!IsServer || !_networkEventsSubscribed) return;
+        
+        netcodeController.OnDespawnHeldItem -= HandleDespawnHeldItem;
+        netcodeController.OnStartAcceptItemAnimation -= HandleStartAcceptItemAnimation;
+
+        netcodeController.TargetPlayerClientId.OnValueChanged -= HandleTargetPlayerChanged;
+        
+        _networkEventsSubscribed = false;
     }
     
     /// <summary>

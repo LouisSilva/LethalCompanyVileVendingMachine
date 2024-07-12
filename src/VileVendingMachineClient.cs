@@ -29,6 +29,7 @@ public class VileVendingMachineClient : MonoBehaviour
     private const string StartPlaceItemText = "Place item: [E]";
     private const string PlaceItemText = "Placing item...";
     private const string NoItemsText = "No items to place...";
+    private const string CannotPlaceItemText = "No space to place item...";
     
     #pragma warning disable 0649
     [Header("Audio")] [Space(5f)] 
@@ -51,19 +52,22 @@ public class VileVendingMachineClient : MonoBehaviour
     [SerializeField] private Transform itemHolder;
     [SerializeField] private Transform eye;
     [SerializeField] private Transform colaPlaceholder;
+    
+    [Header("Visuals")] [Space(5f)]
+    [SerializeField] private Animator animator;
+    [SerializeField] private SkinnedMeshRenderer bodyRenderer;
+    [SerializeField] private MeshRenderer colaPlaceholderRenderer;
+    [SerializeField] private VisualEffect materializeVfx;
+    [SerializeField] private GameObject scanNode;
 
     [Header("Controllers")] [Space(5f)] 
     [SerializeField] private VileVendingMachineNetcodeController netcodeController;
-    [SerializeField] private Animator animator;
     [SerializeField] private InteractTrigger triggerScript;
-    [SerializeField] private SkinnedMeshRenderer renderer;
-    [SerializeField] private VisualEffect materializeVfx;
     #pragma warning restore 0649
-
-    private bool _isItemOnHand;
+    
     private bool _increasingFearLevel;
 
-    private PlayerControllerB _targetPlayer;
+    private readonly NullableObject<PlayerControllerB> _targetPlayer = null;
     
     private CompanyColaBehaviour _currentColaBehaviour;
 
@@ -71,32 +75,30 @@ public class VileVendingMachineClient : MonoBehaviour
     {
         netcodeController.OnInitializeConfigValues += HandleInitializeConfigValues;
         netcodeController.OnUpdateVendingMachineIdentifier += HandleUpdateVendingMachineIdentifier;
-        netcodeController.OnDoAnimation += SetTrigger;
-        netcodeController.OnChangeAnimationParameterBool += SetBool;
+        netcodeController.OnSetAnimationTrigger += HandleSetAnimationTrigger;
         netcodeController.OnPlaceItemInHand += HandlePlaceItemInHand;
-        netcodeController.OnChangeTargetPlayer += HandleChangeTargetPlayer;
         netcodeController.OnUpdateColaNetworkObjectReference += HandleUpdateColaNetworkObjectReference;
-        netcodeController.OnSetMeshEnabled += HandleSetMeshEnabled;
         netcodeController.OnPlayMaterializeVfx += HandlePlayMaterializeVfx;
         netcodeController.OnPlayCreatureSfx += HandlePlayCreatureSfx;
         netcodeController.OnIncreaseFearLevelWhenPlayerBlended += HandleIncreaseFearLevelWhenPlayerBlended;
-        netcodeController.OnSetIsItemOnHand += HandleSetIsItemOnHand;
+        
+        netcodeController.TargetPlayerClientId.OnValueChanged += HandleTargetPlayerChanged;
+        netcodeController.MeshEnabled.OnValueChanged += HandleSetMeshEnabled;
     }
     
     private void OnDisable()
     {
         netcodeController.OnInitializeConfigValues -= HandleInitializeConfigValues;
         netcodeController.OnUpdateVendingMachineIdentifier -= HandleUpdateVendingMachineIdentifier;
-        netcodeController.OnDoAnimation -= SetTrigger;
-        netcodeController.OnChangeAnimationParameterBool -= SetBool;
+        netcodeController.OnSetAnimationTrigger -= HandleSetAnimationTrigger;
         netcodeController.OnPlaceItemInHand -= HandlePlaceItemInHand;
-        netcodeController.OnChangeTargetPlayer -= HandleChangeTargetPlayer;
         netcodeController.OnUpdateColaNetworkObjectReference -= HandleUpdateColaNetworkObjectReference;
-        netcodeController.OnSetMeshEnabled -= HandleSetMeshEnabled;
         netcodeController.OnPlayMaterializeVfx -= HandlePlayMaterializeVfx;
         netcodeController.OnPlayCreatureSfx -= HandlePlayCreatureSfx;
         netcodeController.OnIncreaseFearLevelWhenPlayerBlended -= HandleIncreaseFearLevelWhenPlayerBlended;
-        netcodeController.OnSetIsItemOnHand -= HandleSetIsItemOnHand;
+        
+        netcodeController.TargetPlayerClientId.OnValueChanged -= HandleTargetPlayerChanged;
+        netcodeController.MeshEnabled.OnValueChanged += HandleSetMeshEnabled;
     }
 
     private void Start()
@@ -111,7 +113,9 @@ public class VileVendingMachineClient : MonoBehaviour
         triggerScript.cooldownTime = 0;
         
         #if DEBUG
-        colaPlaceholder.GetComponent<MeshRenderer>().enabled = true;
+        colaPlaceholderRenderer.enabled = true;
+        #else
+        colaPlaceholderRenderer.enabled = false;
         #endif
     }
 
@@ -123,28 +127,75 @@ public class VileVendingMachineClient : MonoBehaviour
     private void InteractVendingMachine(PlayerControllerB playerInteractor)
     {
         if (playerInteractor == null) return;
+        if (netcodeController.IsItemOnHand.Value) return;
         if (!playerInteractor.isHoldingObject) return;
-        PlaceItemInHand(ref playerInteractor);
+        if (GameNetworkManager.Instance.localPlayerController == playerInteractor) netcodeController.PlaceItemInHandServerRpc(_vendingMachineId, playerInteractor.actualClientId);
+    }
+
+    private void HandlePlaceItemInHand(string receivedVendingMachineId, ulong targetPlayerId)
+    {
+        if (_vendingMachineId != receivedVendingMachineId) return;
+        StartCoroutine(PlaceItemInHand(targetPlayerId));
+    }
+
+    private IEnumerator PlaceItemInHand(ulong targetPlayerId)
+    {
+        if (netcodeController.IsOwner)
+            netcodeController.TargetPlayerClientId.Value = targetPlayerId;
+        
+        // Make the player discard their held item onto the vending machine's hand
+        PlayerControllerB player = StartOfRound.Instance.allPlayerScripts[targetPlayerId];
+        if (player == null)
+        {
+            LogDebug($"There is no player with ID: {targetPlayerId}. Cannot place item onto vending machine's hand.");
+            yield break;
+        }
+
+        GrabbableObject item = player.currentlyHeldObjectServer;
+        Vector3 placePosition = itemHolder.transform.position;
+        placePosition.y += item.itemProperties.verticalOffset;
+        placePosition = itemHolder.InverseTransformPoint(placePosition);
+
+        if (GameNetworkManager.Instance.localPlayerController == player)
+        {
+            player.DiscardHeldObject(true, GetComponent<NetworkObject>(), placePosition, false);
+        }
+
+        // Make sure the discard held object stuff has fully synced
+        yield return new WaitForSeconds(0.25f);
+        yield return null;
+
+        item.isHeldByEnemy = true;
+        item.grabbable = false;
+        item.grabbableToEnemies = false;
+        if (netcodeController.IsOwner) netcodeController.IsItemOnHand.Value = true;
+        yield return null;
+        
+        item.EnablePhysics(false);
+        item.transform.SetParent(itemHolder);
+        item.transform.position = placePosition;
+
+        item.transform.rotation = item.floorYRot == -1
+            ? Quaternion.Euler(
+                item.itemProperties.restingRotation.x,
+                item.itemProperties.restingRotation.y,
+                item.itemProperties.restingRotation.z)
+
+            : Quaternion.Euler(
+                item.itemProperties.restingRotation.x,
+                item.floorYRot + item.itemProperties.floorYOffset + 90f,
+                item.itemProperties.restingRotation.z);
+
+        yield return null;
+        if (GameNetworkManager.Instance.localPlayerController == player) netcodeController.StartAcceptItemAnimationServerRpc(_vendingMachineId);
     }
     
-    private void PlaceItemInHand(ref PlayerControllerB playerInteractor)
-    {
-        if (_isItemOnHand) return;
-        if (GameNetworkManager.Instance == null) return;
-
-        _isItemOnHand = true;
-        
-        if (GameNetworkManager.Instance.localPlayerController == playerInteractor) netcodeController.ChangeTargetPlayerServerRpc(_vendingMachineId, playerInteractor.actualClientId);
-        HandlePlayerDiscardHeldItem(playerInteractor.actualClientId);
-        if (GameNetworkManager.Instance.localPlayerController == playerInteractor) netcodeController.StartAcceptItemAnimationServerRpc(_vendingMachineId);
-    }
-
     private void HandleIncreaseFearLevelWhenPlayerBlended(string receivedVendingMachineId)
     {
         if (_vendingMachineId != receivedVendingMachineId) return;
 
         _increasingFearLevel = true;
-        LogDebug("Starting coroutine for increasing fear");
+        LogDebug("Starting coroutine for increasing fear.");
         StartCoroutine(IncreaseFearLevelForArmGrab());
     }
 
@@ -154,7 +205,7 @@ public class VileVendingMachineClient : MonoBehaviour
         {
             if (GameNetworkManager.Instance.localPlayerController.HasLineOfSightToPosition(eye.position, 50f, 30, 3f))
             {
-                LogDebug("Increasing fear level");
+                LogDebug("Increasing fear level.");
                 GameNetworkManager.Instance.localPlayerController.JumpToFearLevel(1);
                 GameNetworkManager.Instance.localPlayerController.IncreaseFearLevelOverTime(0.8f);
             }
@@ -162,60 +213,19 @@ public class VileVendingMachineClient : MonoBehaviour
             yield return new WaitForSeconds(0.15f);
         }
     }
-    
-    private void HandlePlayerDiscardHeldItem(ulong playerClientId)
-    {
-        _isItemOnHand = true;
-
-        PlayerControllerB player = StartOfRound.Instance.allPlayerScripts[playerClientId];
-        GrabbableObject item = player.currentlyHeldObjectServer;
-        
-        if (item == null) item = player.currentlyHeldObject;
-        if (item == null) item = player.currentlyGrabbingObject;
-
-        Vector3 placePosition = itemHolder.GetComponent<Transform>().position;
-        placePosition.y += item.itemProperties.verticalOffset;
-        placePosition = itemHolder.InverseTransformPoint(placePosition);
-        
-        player.DiscardHeldObject(true, GetComponent<NetworkObject>(), placePosition, false);
-        if (GameNetworkManager.Instance.localPlayerController == player) netcodeController.PlaceItemInHandServerRpc(_vendingMachineId, item.GetComponent<NetworkObject>(), placePosition);
-    }
-
-    private void HandlePlaceItemInHand(string receivedVendingMachineId, NetworkObjectReference networkObjectReference,
-        Vector3 position)
-    {
-        if (_vendingMachineId != receivedVendingMachineId) return;
-        if (!networkObjectReference.TryGet(out NetworkObject networkObject)) return;
-        GrabbableObject item = networkObject.GetComponent<GrabbableObject>();
-        
-        item.isHeldByEnemy = true;
-        item.grabbable = false;
-        item.grabbableToEnemies = false;
-        _isItemOnHand = true;
-        
-        item.EnablePhysics(false);
-        item.transform.SetParent(itemHolder);
-        
-        item.transform.position = position;
-        
-        // This is correct but the rotation of the item holder just overrides it
-        item.transform.rotation = item.floorYRot == -1
-            ? Quaternion.Euler(
-                item.itemProperties.restingRotation.x, 
-                item.itemProperties.restingRotation.y,
-                item.itemProperties.restingRotation.z)
-            
-            : Quaternion.Euler(item.itemProperties.restingRotation.x,
-                item.floorYRot + item.itemProperties.floorYOffset + 90f, 
-                item.itemProperties.restingRotation.z);
-    }
 
     private IEnumerator KillTargetPlayer()
     {
-        LogDebug($"Killing player: {_targetPlayer.name}");
+        if (!_targetPlayer.IsNotNull)
+        {
+            _mls.LogError("Tried to kill target player, but the target player variable is null.");
+            yield break;
+        }
+        
+        LogDebug($"Killing player: {_targetPlayer.Value.name}.");
         
         // Shake peoples screens if they are near
-        if (HUDManager.Instance.localPlayer == _targetPlayer) HUDManager.Instance.ShakeCamera(ScreenShakeType.Big);
+        if (HUDManager.Instance.localPlayer == _targetPlayer.Value) HUDManager.Instance.ShakeCamera(ScreenShakeType.Big);
         else
         {
             // If player is very near
@@ -228,28 +238,28 @@ public class VileVendingMachineClient : MonoBehaviour
         }
         
         yield return new WaitForSeconds(0.05f);
-        _targetPlayer.KillPlayer(Vector3.zero, true, CauseOfDeath.Crushing);
+        _targetPlayer.Value.KillPlayer(Vector3.zero, true, CauseOfDeath.Crushing);
 
-        yield return new WaitUntil(() => _targetPlayer.deadBody != null);
+        yield return new WaitUntil(() => _targetPlayer.Value.deadBody != null);
         _increasingFearLevel = false;
-        if (_targetPlayer.deadBody != null)
+        if (_targetPlayer.Value.deadBody != null)
         {
-            _targetPlayer.deadBody.attachedTo = handBone.transform;
-            _targetPlayer.deadBody.attachedLimb = _targetPlayer.deadBody.bodyParts[5];
-            _targetPlayer.deadBody.matchPositionExactly = true;
+            _targetPlayer.Value.deadBody.attachedTo = handBone.transform;
+            _targetPlayer.Value.deadBody.attachedLimb = _targetPlayer.Value.deadBody.bodyParts[5];
+            _targetPlayer.Value.deadBody.matchPositionExactly = true;
 
-            foreach (Rigidbody body in _targetPlayer.deadBody.bodyParts)
+            foreach (Rigidbody body in _targetPlayer.Value.deadBody.bodyParts)
                 body.GetComponent<Collider>().excludeLayers = ~0;
         }
 
         yield return new WaitForSeconds(1.5f);
-        if (_targetPlayer.deadBody != null)
+        if (_targetPlayer.Value.deadBody != null)
         {
-            _targetPlayer.deadBody.attachedTo = null;
-            _targetPlayer.deadBody.attachedLimb = null;
-            _targetPlayer.deadBody.matchPositionExactly = false;
-            _targetPlayer.deadBody.transform.GetChild(0).gameObject.SetActive(false);
-            _targetPlayer.deadBody = null;
+            _targetPlayer.Value.deadBody.attachedTo = null;
+            _targetPlayer.Value.deadBody.attachedLimb = null;
+            _targetPlayer.Value.deadBody.matchPositionExactly = false;
+            _targetPlayer.Value.deadBody.transform.GetChild(0).gameObject.SetActive(false);
+            _targetPlayer.Value.deadBody = null;
         }
     }
 
@@ -279,12 +289,12 @@ public class VileVendingMachineClient : MonoBehaviour
     public void OnAnimationEventEnableColaPhysics()
     {
         PlaySfx(flapCreakFullSfx);
-        _isItemOnHand = false;
+        if (netcodeController.IsOwner) netcodeController.IsItemOnHand.Value = false;
         
         _currentColaBehaviour.grabbable = true;
         _currentColaBehaviour.grabbableToEnemies = true;
-        
         _currentColaBehaviour.transform.SetParent(null);
+        
         Rigidbody colaRigidbody = _currentColaBehaviour.GetComponent<Rigidbody>();
         colaRigidbody.isKinematic = false;
         colaRigidbody.AddForce(transform.forward * 5f, ForceMode.Impulse);
@@ -303,15 +313,9 @@ public class VileVendingMachineClient : MonoBehaviour
 
     private void UpdateInteractTriggers()
     {
-        if (GameNetworkManager.Instance.localPlayerController == null)
+        if (netcodeController.IsItemOnHand.Value)
         {
-            SetInteractTriggers(false, NoItemsText);
-            return;
-        }
-
-        if (_isItemOnHand)
-        {
-            SetInteractTriggers(false, "");
+            SetInteractTriggers(false, CannotPlaceItemText);
             return;
         }
     
@@ -321,7 +325,7 @@ public class VileVendingMachineClient : MonoBehaviour
             return;
         }
     
-        SetInteractTriggers(true);
+        SetInteractTriggers(true, PlaceItemText);
     }
     
     private void SetInteractTriggers(bool interactable = false, string hoverTip = StartPlaceItemText)
@@ -350,7 +354,8 @@ public class VileVendingMachineClient : MonoBehaviour
 
     private IEnumerator PlayMaterializeVfx(Vector3 finalPosition, Quaternion finalRotation)
     {
-        renderer.enabled = false;
+        if (netcodeController.MeshEnabled.Value && netcodeController.IsOwner)
+            netcodeController.MeshEnabled.Value = false;
         transform.position = finalPosition;
         transform.rotation = finalRotation;
         
@@ -361,15 +366,16 @@ public class VileVendingMachineClient : MonoBehaviour
         
         enemyCollider.gameObject.SetActive(true);
         materializeVfx.SendEvent("PlayMaterialize");
-        
+
+        if (!netcodeController.IsOwner) yield break;
         yield return new WaitForSeconds(3);
-        renderer.enabled = true;
+        netcodeController.MeshEnabled.Value = true;
     }
 
-    private void HandleSetMeshEnabled(string receivedVendingMachineId, bool meshEnabled)
+    private void HandleSetMeshEnabled(bool oldValue, bool newValue)
     {
-        if (_vendingMachineId != receivedVendingMachineId) return;
-        renderer.enabled = meshEnabled;
+        bodyRenderer.enabled = newValue;
+        scanNode.SetActive(newValue);
     }
 
     private void HandleUpdateColaNetworkObjectReference(string receivedVendingMachineId,
@@ -377,7 +383,7 @@ public class VileVendingMachineClient : MonoBehaviour
     {
         if (_vendingMachineId != receivedVendingMachineId) return;
         if (!colaNetworkObjectReference.TryGet(out NetworkObject colaNetworkObject)) return;
-        LogDebug("Cola network object reference was not null");
+        LogDebug("Cola network object reference was not null.");
 
         _currentColaBehaviour = colaNetworkObject.GetComponent<CompanyColaBehaviour>();
         _currentColaBehaviour.isPartOfVendingMachine = true;
@@ -388,27 +394,7 @@ public class VileVendingMachineClient : MonoBehaviour
         _currentColaBehaviour.grabbableToEnemies = false;
         _currentColaBehaviour.fallTime = 1f;
         
-        LogDebug($"Cola parent is: {_currentColaBehaviour.transform.parent.name}");
-    }
-
-    private void HandleSetIsItemOnHand(string receivedVendingMachineId, bool isItemOnHand)
-    {
-        if (_vendingMachineId != receivedVendingMachineId) return;
-        _isItemOnHand = isItemOnHand;
-    }
-    
-    private void HandleChangeTargetPlayer(string receivedVendingMachineId, ulong playerClientId)
-    {
-        if (_vendingMachineId != receivedVendingMachineId) return;
-        if (playerClientId == 69420)
-        {
-            _targetPlayer = null;
-            LogDebug("Target player is now null");
-            return;
-        }
-        
-        _targetPlayer = StartOfRound.Instance.allPlayerScripts[playerClientId];
-        LogDebug($"Target player is now {_targetPlayer.playerUsername}, ishost?: {_targetPlayer.IsHost}");
+        LogDebug($"Cola parent is: {_currentColaBehaviour.transform.parent.name}.");
     }
     
     private void HandleInitializeConfigValues(string receivedVendingMachineId)
@@ -419,13 +405,7 @@ public class VileVendingMachineClient : MonoBehaviour
         creatureSfxSource.volume = VileVendingMachineConfig.Instance.SoundEffectsVolume.Value;
     }
 
-    private void SetBool(string receivedVendingMachineId, int parameter, bool value)
-    {
-        if (_vendingMachineId != receivedVendingMachineId) return;
-        animator.SetBool(parameter, value);
-    }
-
-    private void SetTrigger(string receivedVendingMachineId, int parameter)
+    private void HandleSetAnimationTrigger(string receivedVendingMachineId, int parameter)
     {
         if (_vendingMachineId != receivedVendingMachineId) return;
         animator.SetTrigger(parameter);
@@ -446,7 +426,7 @@ public class VileVendingMachineClient : MonoBehaviour
 
         if (audioClip == null)
         {
-            _mls.LogError($"Vending machine audio clip index '{audioClipType}' is null");
+            _mls.LogError($"Vending machine audio clip index '{audioClipType}' is null.");
             return;
         }
         
@@ -457,15 +437,23 @@ public class VileVendingMachineClient : MonoBehaviour
     {
         if (clip == null)
         {
-            _mls.LogError($"Vending machine audio clip is null");
+            _mls.LogError($"Vending machine audio clip is null, could not play it.");
             return;
         }
         
-        LogDebug($"Playing audio clip: {clip.name}");
+        LogDebug($"Playing audio clip: {clip.name}.");
         
         if (interrupt) creatureSfxSource.Stop(true);
         creatureSfxSource.PlayOneShot(clip);
         WalkieTalkie.TransmitOneShotAudio(creatureSfxSource, clip, creatureSfxSource.volume);
+    }
+    
+    private void HandleTargetPlayerChanged(ulong oldValue, ulong newValue)
+    {
+        _targetPlayer.Value = newValue == 69420 ? null : StartOfRound.Instance.allPlayerScripts[newValue];
+        LogDebug(_targetPlayer.IsNotNull
+            ? $"Changed target player to {_targetPlayer.Value!.playerUsername}"
+            : "Changed target player to null");
     }
 
     private void HandleUpdateVendingMachineIdentifier(string receivedVendingMachineId)
@@ -475,7 +463,7 @@ public class VileVendingMachineClient : MonoBehaviour
         _mls = BepInEx.Logging.Logger.CreateLogSource(
             $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine Client {_vendingMachineId}");
         
-        LogDebug("Successfully synced vending machine identifier");
+        LogDebug("Successfully synced vending machine identifier.");
     }
 
     private void LogDebug(string msg)

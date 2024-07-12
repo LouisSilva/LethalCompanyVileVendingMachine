@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using BepInEx.Logging;
 using Unity.Netcode;
 using UnityEngine;
@@ -16,13 +18,23 @@ public class CompanyColaBehaviour : PhysicsProp
     [SerializeField] private ScanNodeProperties outerScanNode;
     #pragma warning restore 0649
     
-    public bool isPartOfVendingMachine;
+    [HideInInspector] public bool isPartOfVendingMachine;
     
     private bool _hasBeenPickedUp;
 
     public override void Start()
     {
+        // Doing this prop collider stuff is needed because if not, the start method breaks the custom cola physics.
+        // I also can't just not use the base.Start(), because it breaks compatibility with mods.
+        propColliders = gameObject.GetComponentsInChildren<Collider>();
+        List<LayerMask> propCollidersExcludeLayersBeforeStart = [];
+        propCollidersExcludeLayersBeforeStart.AddRange(propColliders.Select(propCollider => propCollider.excludeLayers));
+
         base.Start();
+
+        for (int index = 0; index < propColliders.Length; ++index)
+            propColliders[index].excludeLayers = propCollidersExcludeLayersBeforeStart[index];
+        
         grabbable = true;
         grabbableToEnemies = true;
         
@@ -35,7 +47,13 @@ public class CompanyColaBehaviour : PhysicsProp
 
     public override void Update()
     {
-        if (isHeld && isPartOfVendingMachine) isPartOfVendingMachine = false;
+        if (isHeld && isPartOfVendingMachine)
+        {
+            isPartOfVendingMachine = false;
+            foreach (Collider propCollider in propColliders)
+                propCollider.excludeLayers = -2621449;
+        }
+        
         if (isPartOfVendingMachine) return;
         base.Update();
     }
@@ -102,10 +120,13 @@ public class CompanyColaBehaviour : PhysicsProp
     }
 
     [ClientRpc]
-    public void SyncColaIdClientRpc(string colaId)
+    public void SyncColaIdClientRpc(string receivedColaId)
     {
-        _colaId = colaId;
+        _colaId = receivedColaId;
+        _mls?.Dispose();
         _mls = Logger.CreateLogSource($"{VileVendingMachinePlugin.ModGuid} | Company Cola {_colaId}");
+        
+        LogDebug("Successfully synced company cola identifier.");
     }
 
     private void LogDebug(string msg)

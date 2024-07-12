@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using BepInEx.Logging;
 using Unity.Netcode;
 using UnityEngine;
@@ -6,23 +7,24 @@ using Logger = BepInEx.Logging.Logger;
 
 namespace LethalCompanyVileVendingMachine;
 
+[SuppressMessage("ReSharper", "Unity.RedundantHideInInspectorAttribute")]
 public class VileVendingMachineNetcodeController : NetworkBehaviour
 {
     private ManualLogSource _mls;
 
+    [HideInInspector] public readonly NetworkVariable<ulong> TargetPlayerClientId = new();
+    [HideInInspector] public readonly NetworkVariable<bool> IsItemOnHand = new();
+    [HideInInspector] public readonly NetworkVariable<bool> MeshEnabled = new();
+    
     public event Action<string> OnInitializeConfigValues;
     public event Action<string> OnUpdateVendingMachineIdentifier;
-    public event Action<string, int> OnDoAnimation;
-    public event Action<string, int, bool> OnChangeAnimationParameterBool;
-    public event Action<string, NetworkObjectReference, Vector3> OnPlaceItemInHand;
+    public event Action<string, int> OnSetAnimationTrigger;
+    public event Action<string, ulong> OnPlaceItemInHand;
     public event Action<string> OnDespawnHeldItem;
-    public event Action<string, ulong> OnChangeTargetPlayer;
     public event Action<string, NetworkObjectReference, int> OnUpdateColaNetworkObjectReference;
-    public event Action<string, bool> OnSetMeshEnabled;
     public event Action<string, Vector3, Quaternion> OnPlayMaterializeVfx;
     public event Action<string, int, bool> OnPlayCreatureSfx;
     public event Action<string> OnIncreaseFearLevelWhenPlayerBlended;
-    public event Action<string, bool> OnSetIsItemOnHand;
     public event Action<string> OnStartAcceptItemAnimation;
 
     private void Start()
@@ -35,12 +37,6 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     public void StartAcceptItemAnimationServerRpc(string receivedVendingMachineId)
     {
         OnStartAcceptItemAnimation?.Invoke(receivedVendingMachineId);
-    }
-
-    [ClientRpc]
-    public void SetIsItemOnHandClientRpc(string receivedVendingMachineId, bool isItemOnHand)
-    {
-        OnSetIsItemOnHand?.Invoke(receivedVendingMachineId, isItemOnHand);
     }
 
     [ClientRpc]
@@ -62,12 +58,6 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     }
 
     [ClientRpc]
-    public void SetMeshEnabledClientRpc(string receivedVendingMachineId, bool meshEnabled)
-    {
-        OnSetMeshEnabled?.Invoke(receivedVendingMachineId, meshEnabled);
-    }
-
-    [ClientRpc]
     public void UpdateColaNetworkObjectReferenceClientRpc(string receivedVendingMachineId,
         NetworkObjectReference colaNetworkObjectReference, int colaValue)
     {
@@ -75,33 +65,21 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     }
 
     [ServerRpc(RequireOwnership = false)]
-    public void PlaceItemInHandServerRpc(string receivedVendingMachineId, NetworkObjectReference networkObjectReference, Vector3 position)
+    public void PlaceItemInHandServerRpc(string receivedVendingMachineId, ulong targetPlayerId)
     {
-        PlaceItemInHandClientRpc(receivedVendingMachineId, networkObjectReference, position);
+        PlaceItemInHandClientRpc(receivedVendingMachineId, targetPlayerId);
+    }
+    
+    [ClientRpc]
+    public void PlaceItemInHandClientRpc(string receivedVendingMachineId, ulong targetPlayerId)
+    {
+        OnPlaceItemInHand?.Invoke(receivedVendingMachineId, targetPlayerId);
     }
 
     [ServerRpc(RequireOwnership = false)]
     public void DespawnHeldItemServerRpc(string receivedVendingMachineId)
     {
         OnDespawnHeldItem?.Invoke(receivedVendingMachineId);
-    }
-
-    [ServerRpc(RequireOwnership = false)]
-    public void ChangeTargetPlayerServerRpc(string receivedVendingMachineId, ulong playerClientId)
-    {
-        ChangeTargetPlayerClientRpc(receivedVendingMachineId, playerClientId);
-    }
-
-    [ClientRpc]
-    private void ChangeTargetPlayerClientRpc(string receivedVendingMachineId, ulong playerClientId)
-    {
-        OnChangeTargetPlayer?.Invoke(receivedVendingMachineId, playerClientId);
-    }
-    
-    [ClientRpc]
-    public void PlaceItemInHandClientRpc(string receivedVendingMachineId, NetworkObjectReference networkObjectReference, Vector3 position)
-    {
-        OnPlaceItemInHand?.Invoke(receivedVendingMachineId, networkObjectReference, position);
     }
 
     [ClientRpc]
@@ -115,17 +93,11 @@ public class VileVendingMachineNetcodeController : NetworkBehaviour
     {
         OnUpdateVendingMachineIdentifier?.Invoke(receivedVendingMachineId);
     }
-    
-    [ClientRpc]
-    public void ChangeAnimationParameterBoolClientRpc(string receivedVendingMachineId, int animationId, bool value)
-    {
-        OnChangeAnimationParameterBool?.Invoke(receivedVendingMachineId, animationId, value);
-    }
 
     [ClientRpc]
-    public void DoAnimationClientRpc(string receivedVendingMachineId, int animationId)
+    public void SetAnimationTriggerClientRpc(string receivedVendingMachineId, int animationId)
     {
-        OnDoAnimation?.Invoke(receivedVendingMachineId, animationId);
+        OnSetAnimationTrigger?.Invoke(receivedVendingMachineId, animationId);
     }
 
     private void LogDebug(string msg)

@@ -27,9 +27,10 @@ public class VileVendingMachineClient : MonoBehaviour
     public static readonly int Dispense = Animator.StringToHash("dispense");
     
     private const string StartPlaceItemText = "Place item: [E]";
-    private const string PlaceItemText = "Placing item...";
-    private const string NoItemsText = "No items to place...";
-    private const string CannotPlaceItemText = "No space to place item...";
+    private const string PlacingItemText = "Placing item...";
+    private const string NoItemsText = "No items to place.";
+    private const string CannotPlaceItemText = "No space to place item.";
+    private const string SomeoneAlreadyPlacingItemText = "Someone is already placing an item.";
     
     #pragma warning disable 0649
     [Header("Audio")] [Space(5f)] 
@@ -66,39 +67,21 @@ public class VileVendingMachineClient : MonoBehaviour
     #pragma warning restore 0649
     
     private bool _increasingFearLevel;
+    private bool _networkEventsSubscribed;
 
-    private readonly NullableObject<PlayerControllerB> _targetPlayer = null;
+    private readonly NullableObject<PlayerControllerB> _targetPlayer = new();
+    private readonly NullableObject<PlayerControllerB> _interactingWithPlayer = new();
     
     private CompanyColaBehaviour _currentColaBehaviour;
 
     private void OnEnable()
     {
-        netcodeController.OnInitializeConfigValues += HandleInitializeConfigValues;
-        netcodeController.OnUpdateVendingMachineIdentifier += HandleUpdateVendingMachineIdentifier;
-        netcodeController.OnSetAnimationTrigger += HandleSetAnimationTrigger;
-        netcodeController.OnPlaceItemInHand += HandlePlaceItemInHand;
-        netcodeController.OnUpdateColaNetworkObjectReference += HandleUpdateColaNetworkObjectReference;
-        netcodeController.OnPlayMaterializeVfx += HandlePlayMaterializeVfx;
-        netcodeController.OnPlayCreatureSfx += HandlePlayCreatureSfx;
-        netcodeController.OnIncreaseFearLevelWhenPlayerBlended += HandleIncreaseFearLevelWhenPlayerBlended;
-        
-        netcodeController.TargetPlayerClientId.OnValueChanged += HandleTargetPlayerChanged;
-        netcodeController.MeshEnabled.OnValueChanged += HandleSetMeshEnabled;
+        SubscribeToNetworkEvents();
     }
     
     private void OnDisable()
     {
-        netcodeController.OnInitializeConfigValues -= HandleInitializeConfigValues;
-        netcodeController.OnUpdateVendingMachineIdentifier -= HandleUpdateVendingMachineIdentifier;
-        netcodeController.OnSetAnimationTrigger -= HandleSetAnimationTrigger;
-        netcodeController.OnPlaceItemInHand -= HandlePlaceItemInHand;
-        netcodeController.OnUpdateColaNetworkObjectReference -= HandleUpdateColaNetworkObjectReference;
-        netcodeController.OnPlayMaterializeVfx -= HandlePlayMaterializeVfx;
-        netcodeController.OnPlayCreatureSfx -= HandlePlayCreatureSfx;
-        netcodeController.OnIncreaseFearLevelWhenPlayerBlended -= HandleIncreaseFearLevelWhenPlayerBlended;
-        
-        netcodeController.TargetPlayerClientId.OnValueChanged -= HandleTargetPlayerChanged;
-        netcodeController.MeshEnabled.OnValueChanged += HandleSetMeshEnabled;
+        UnsubscribeFromNetworkEvents();
     }
 
     private void Start()
@@ -108,6 +91,8 @@ public class VileVendingMachineClient : MonoBehaviour
         
         triggerScript = GetComponentInChildren<InteractTrigger>();
         triggerScript.onInteract.AddListener(InteractVendingMachine);
+        triggerScript.onInteractEarly.AddListener(AssignPlayerInteractor);
+        triggerScript.onStopInteract.AddListener(AssignPlayerInteractor);
         triggerScript.tag = nameof(InteractTrigger);
         triggerScript.interactCooldown = false;
         triggerScript.cooldownTime = 0;
@@ -122,6 +107,13 @@ public class VileVendingMachineClient : MonoBehaviour
     private void Update()
     {
         UpdateInteractTriggers();
+    }
+
+    private void AssignPlayerInteractor(PlayerControllerB playerInteractor)
+    {
+        if (netcodeController.IsItemOnHand.Value) return;
+        if (GameNetworkManager.Instance.localPlayerController == playerInteractor)
+            _interactingWithPlayer.Value = playerInteractor;
     }
     
     private void InteractVendingMachine(PlayerControllerB playerInteractor)
@@ -140,6 +132,7 @@ public class VileVendingMachineClient : MonoBehaviour
 
     private IEnumerator PlaceItemInHand(ulong targetPlayerId)
     {
+        LogDebug($"In {nameof(PlaceItemInHand)} coroutine.");
         if (netcodeController.IsOwner)
             netcodeController.TargetPlayerClientId.Value = targetPlayerId;
         
@@ -162,14 +155,13 @@ public class VileVendingMachineClient : MonoBehaviour
         }
 
         // Make sure the discard held object stuff has fully synced
-        yield return new WaitForSeconds(0.25f);
+        yield return new WaitForSeconds(0.12f);
         yield return null;
 
         item.isHeldByEnemy = true;
         item.grabbable = false;
         item.grabbableToEnemies = false;
         if (netcodeController.IsOwner) netcodeController.IsItemOnHand.Value = true;
-        yield return null;
         
         item.EnablePhysics(false);
         item.transform.SetParent(itemHolder);
@@ -185,9 +177,9 @@ public class VileVendingMachineClient : MonoBehaviour
                 item.itemProperties.restingRotation.x,
                 item.floorYRot + item.itemProperties.floorYOffset + 90f,
                 item.itemProperties.restingRotation.z);
-
-        yield return null;
-        if (GameNetworkManager.Instance.localPlayerController == player) netcodeController.StartAcceptItemAnimationServerRpc(_vendingMachineId);
+        
+        if (GameNetworkManager.Instance.localPlayerController == player)
+            netcodeController.StartAcceptItemAnimationServerRpc(_vendingMachineId);
     }
     
     private void HandleIncreaseFearLevelWhenPlayerBlended(string receivedVendingMachineId)
@@ -263,6 +255,82 @@ public class VileVendingMachineClient : MonoBehaviour
         }
     }
 
+    public void OnAnimationEventEnableColaPhysics()
+    {
+        PlaySfx(flapCreakFullSfx);
+        if (netcodeController.IsOwner) netcodeController.IsItemOnHand.Value = false;
+        
+        _currentColaBehaviour.grabbable = true;
+        _currentColaBehaviour.grabbableToEnemies = true;
+        _currentColaBehaviour.transform.SetParent(null);
+        
+        Rigidbody colaRigidbody = _currentColaBehaviour.GetComponent<Rigidbody>();
+        colaRigidbody.isKinematic = false;
+        colaRigidbody.AddForce(transform.forward * 5f, ForceMode.Impulse);
+        colaRigidbody.AddTorque(transform.right * 20f, ForceMode.Impulse);
+    }
+
+    private void UpdateInteractTriggers()
+    {
+        if (netcodeController.IsItemOnHand.Value)
+        {
+            SetInteractTriggers(false, CannotPlaceItemText);
+            return;
+        }
+
+        PlayerControllerB localPlayer = GameNetworkManager.Instance.localPlayerController;
+        if (!localPlayer.isHoldingObject)
+        {
+            SetInteractTriggers(false, NoItemsText);
+        }
+        else
+        {
+            if (_interactingWithPlayer.IsNotNull)
+            {
+                if (localPlayer == _interactingWithPlayer.Value)
+                {
+                    SetInteractTriggers(true, PlacingItemText);
+                }
+                else
+                {
+                    SetInteractTriggers(false, SomeoneAlreadyPlacingItemText);
+                }
+            }
+            else
+            {
+                SetInteractTriggers(true);
+            }
+        }
+    }
+    
+    private void SetInteractTriggers(bool interactable = false, string hoverTip = StartPlaceItemText)
+    {
+        triggerScript.interactable = interactable;
+        if (interactable) triggerScript.hoverTip = hoverTip;
+        else triggerScript.disabledHoverTip = hoverTip;
+    }
+
+    public void OnAnimationEventKillPlayer()
+    {
+        StartCoroutine(KillTargetPlayer());
+    }
+    
+    public void OnAnimationEventSpawnCola()
+    {
+        PlaySfx(crunchSfx, false);
+    }
+
+    public void OnAnimationEventPlayBlendSfx()
+    {
+        PlaySfx(blendSfx);
+    }
+    
+    public void OnAnimationEventDespawnHeldItem()
+    {
+        if (!NetworkManager.Singleton.IsClient || !netcodeController.IsOwner) return;
+        netcodeController.DespawnHeldItemServerRpc(_vendingMachineId);
+    }
+    
     public void OnAnimationEventIncreaseFearLevelWhenPlayerBlended()
     {
         HandleIncreaseFearLevelWhenPlayerBlended(_vendingMachineId);
@@ -284,66 +352,6 @@ public class VileVendingMachineClient : MonoBehaviour
                 PlaySfx(flapCreakCloseSfx);
                 break;
         }
-    }
-
-    public void OnAnimationEventEnableColaPhysics()
-    {
-        PlaySfx(flapCreakFullSfx);
-        if (netcodeController.IsOwner) netcodeController.IsItemOnHand.Value = false;
-        
-        _currentColaBehaviour.grabbable = true;
-        _currentColaBehaviour.grabbableToEnemies = true;
-        _currentColaBehaviour.transform.SetParent(null);
-        
-        Rigidbody colaRigidbody = _currentColaBehaviour.GetComponent<Rigidbody>();
-        colaRigidbody.isKinematic = false;
-        colaRigidbody.AddForce(transform.forward * 5f, ForceMode.Impulse);
-        colaRigidbody.AddTorque(transform.right * 20f, ForceMode.Impulse);
-    }
-
-    public void OnAnimationEventSpawnCola()
-    {
-        PlaySfx(crunchSfx, false);
-    }
-
-    public void OnAnimationEventPlayBlendSfx()
-    {
-        PlaySfx(blendSfx);
-    }
-
-    private void UpdateInteractTriggers()
-    {
-        if (netcodeController.IsItemOnHand.Value)
-        {
-            SetInteractTriggers(false, CannotPlaceItemText);
-            return;
-        }
-    
-        if (!GameNetworkManager.Instance.localPlayerController.isHoldingObject)
-        {
-            SetInteractTriggers(false, NoItemsText);
-            return;
-        }
-    
-        SetInteractTriggers(true, PlaceItemText);
-    }
-    
-    private void SetInteractTriggers(bool interactable = false, string hoverTip = StartPlaceItemText)
-    {
-        triggerScript.interactable = interactable;
-        if (interactable) triggerScript.hoverTip = hoverTip;
-        else triggerScript.disabledHoverTip = hoverTip;
-    }
-
-    public void OnAnimationEventKillPlayer()
-    {
-        StartCoroutine(KillTargetPlayer());
-    }
-    
-    public void OnAnimationEventDespawnHeldItem()
-    {
-        if (!NetworkManager.Singleton.IsClient || !netcodeController.IsOwner) return;
-        netcodeController.DespawnHeldItemServerRpc(_vendingMachineId);
     }
 
     private void HandlePlayMaterializeVfx(string receivedVendingMachineId, Vector3 finalPosition, Quaternion finalRotation)
@@ -464,6 +472,44 @@ public class VileVendingMachineClient : MonoBehaviour
             $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine Client {_vendingMachineId}");
         
         LogDebug("Successfully synced vending machine identifier.");
+    }
+    
+    private void SubscribeToNetworkEvents()
+    {
+        if (_networkEventsSubscribed) return;
+        
+        netcodeController.OnInitializeConfigValues += HandleInitializeConfigValues;
+        netcodeController.OnUpdateVendingMachineIdentifier += HandleUpdateVendingMachineIdentifier;
+        netcodeController.OnSetAnimationTrigger += HandleSetAnimationTrigger;
+        netcodeController.OnPlaceItemInHand += HandlePlaceItemInHand;
+        netcodeController.OnUpdateColaNetworkObjectReference += HandleUpdateColaNetworkObjectReference;
+        netcodeController.OnPlayMaterializeVfx += HandlePlayMaterializeVfx;
+        netcodeController.OnPlayCreatureSfx += HandlePlayCreatureSfx;
+        netcodeController.OnIncreaseFearLevelWhenPlayerBlended += HandleIncreaseFearLevelWhenPlayerBlended;
+        
+        netcodeController.TargetPlayerClientId.OnValueChanged += HandleTargetPlayerChanged;
+        netcodeController.MeshEnabled.OnValueChanged += HandleSetMeshEnabled;
+
+        _networkEventsSubscribed = true;
+    }
+
+    private void UnsubscribeFromNetworkEvents()
+    {
+        if (!_networkEventsSubscribed) return;
+        
+        netcodeController.OnInitializeConfigValues -= HandleInitializeConfigValues;
+        netcodeController.OnUpdateVendingMachineIdentifier -= HandleUpdateVendingMachineIdentifier;
+        netcodeController.OnSetAnimationTrigger -= HandleSetAnimationTrigger;
+        netcodeController.OnPlaceItemInHand -= HandlePlaceItemInHand;
+        netcodeController.OnUpdateColaNetworkObjectReference -= HandleUpdateColaNetworkObjectReference;
+        netcodeController.OnPlayMaterializeVfx -= HandlePlayMaterializeVfx;
+        netcodeController.OnPlayCreatureSfx -= HandlePlayCreatureSfx;
+        netcodeController.OnIncreaseFearLevelWhenPlayerBlended -= HandleIncreaseFearLevelWhenPlayerBlended;
+        
+        netcodeController.TargetPlayerClientId.OnValueChanged -= HandleTargetPlayerChanged;
+        netcodeController.MeshEnabled.OnValueChanged += HandleSetMeshEnabled;
+
+        _networkEventsSubscribed = false;
     }
 
     private void LogDebug(string msg)

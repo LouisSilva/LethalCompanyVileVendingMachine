@@ -2,7 +2,7 @@
 ![Logo](https://i.imgur.com/LinyoYH.gif)
 
 Adds a new Entity and 2 New Scrap to Lethal Company.
-Fully Compatible with v50
+Fully Compatible with v56
 
 
 # Information:
@@ -35,13 +35,12 @@ Vile Vending Machine Plush
 - Possible Fire Exit/Interior Spawning
 	+ Minor bugs, not 100% Confirmed to work
 
-# Bugs/Suggestions:
+# Bugs:
 - Please report any bugs via the Lethal Company Modding Discord or contact me via my Discord Server.
-- Any suggestions are welcome! I'm also interested in modeling some more enemies similar to this one so please send me any ideas or suggestions you may have.
 
 Credit:
 - 3D Modeling, Textures, Animation and Sound Effects: MeatBallDemon
-	+ Twittter: https://twitter.com/M3ATBALLD3MON
+	+ Twitter: https://twitter.com/M3ATBALLD3MON
 	+ Discord Server: https://discord.gg/wbbuGE2YJC
 
 - Programming: Louis Silva

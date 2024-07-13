@@ -115,6 +115,7 @@ public class VileVendingMachineServer : EnemyAI
             $"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine Server {_vendingMachineId}");
         
         // Initialize the random function and config values
+        SubscribeToNetworkEvents();
         Random.InitState(StartOfRound.Instance.randomMapSeed + _vendingMachineId.GetHashCode());
         InitializeConfigValues();
         
@@ -583,6 +584,7 @@ public class VileVendingMachineServer : EnemyAI
     private IEnumerator AcceptItem()
     {
         yield return new WaitForSeconds(0.1f);
+        LogDebug("nkees");
         netcodeController.SetAnimationTriggerClientRpc(_vendingMachineId, VileVendingMachineClient.ArmRetract);
 
         // Get the scan node properties
@@ -661,8 +663,11 @@ public class VileVendingMachineServer : EnemyAI
 
     private void HandleStartAcceptItemAnimation(string receivedVendingMachineId)
     {
-        if (_vendingMachineId != receivedVendingMachineId) return;
+        LogDebug("boi1");
         if (!IsServer) return;
+        LogDebug("boi2");
+        if (_vendingMachineId != receivedVendingMachineId) return;
+        LogDebug("boi3");
         StartCoroutine(AcceptItem());
     }
 

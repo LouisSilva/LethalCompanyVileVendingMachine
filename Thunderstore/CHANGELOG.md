@@ -1,3 +1,11 @@
+## 1.1.0
+Updated the mod to work with v56:
+* Uses the new KillPlayer() function needed.
+* Fixed the bug caused by the new update where colas would fall through the floor.
+
+Other fixes (not caused by v56):
+* Fixed the spaghetti netcode, so the rare clientside bugs should now be fixed.
+
 ## 1.0.12
 * Fixed bug where the vending machine wouldn't be able to spawn if it was spawned right at the beginning of the round (with its enemy type set to daytime for example).
 

@@ -36,7 +36,7 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
 
     private static VileVendingMachinePlugin _instance;
     
-    public static VileVendingMachineConfig VileVendingMachineConfig { get; internal set; }
+    public static VileVendingMachineConfig VileVendingMachineConfigInstance { get; internal set; }
 
     private static EnemyType _vileVendingMachineEnemyType;
 
@@ -59,7 +59,7 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
         }
             
         _harmony.PatchAll();
-        VileVendingMachineConfig = new VileVendingMachineConfig(Config);
+        VileVendingMachineConfigInstance = new VileVendingMachineConfig(Config);
 
         SetupVileVendingMachine();
         SetupCompanyCola();
@@ -155,7 +155,7 @@ public class VileVendingMachinePlugin : BaseUnityPlugin
         }
     }
     
-    private void RegisterEnemyWithConfig(bool enemyEnabled, string configMoonRarity, EnemyType enemy, TerminalNode terminalNode, TerminalKeyword terminalKeyword) {
+    private static void RegisterEnemyWithConfig(bool enemyEnabled, string configMoonRarity, EnemyType enemy, TerminalNode terminalNode, TerminalKeyword terminalKeyword) {
         if (enemyEnabled) { 
             (Dictionary<Levels.LevelTypes, int> spawnRateByLevelType, Dictionary<string, int> spawnRateByCustomLevelType) = ConfigParsing(configMoonRarity);
             Enemies.RegisterEnemy(enemy, spawnRateByLevelType, spawnRateByCustomLevelType, terminalNode, terminalKeyword);

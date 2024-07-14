@@ -27,13 +27,16 @@ public class CompanyColaBehaviour : PhysicsProp
         // Doing this prop collider stuff is needed because if not, the start method breaks the custom cola physics.
         // I also can't just not use the base.Start(), because it breaks compatibility with mods.
         propColliders = gameObject.GetComponentsInChildren<Collider>();
-        List<LayerMask> propCollidersExcludeLayersBeforeStart = [];
+        List<LayerMask> propCollidersExcludeLayersBeforeStart = new(propColliders.Length);
         propCollidersExcludeLayersBeforeStart.AddRange(propColliders.Select(propCollider => propCollider.excludeLayers));
 
         base.Start();
 
         for (int index = 0; index < propColliders.Length; ++index)
-            propColliders[index].excludeLayers = propCollidersExcludeLayersBeforeStart[index];
+        {
+            if (index < propCollidersExcludeLayersBeforeStart.Count)
+                propColliders[index].excludeLayers = propCollidersExcludeLayersBeforeStart[index];
+        }
         
         grabbable = true;
         grabbableToEnemies = true;

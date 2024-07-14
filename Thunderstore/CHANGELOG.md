@@ -1,3 +1,6 @@
+## 1.1.1
+* Fixed the bug where it would display an `ArgumentOutOfRangeException` when a company cola was spawned.
+
 ## 1.1.0
 Updated the mod to work with v56:
 * Uses the new KillPlayer() function needed.

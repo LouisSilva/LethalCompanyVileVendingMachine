@@ -32,7 +32,7 @@ public class VileVendingMachineClient : MonoBehaviour
     private const string CannotPlaceItemText = "No space to place item.";
     private const string SomeoneAlreadyPlacingItemText = "Someone is already placing an item.";
     
-    #pragma warning disable 0649
+#pragma warning disable 0649
     [Header("Audio")] [Space(5f)] 
     [SerializeField] private AudioSource creatureVoiceSource;
     [SerializeField] private AudioSource creatureSfxSource;
@@ -64,7 +64,7 @@ public class VileVendingMachineClient : MonoBehaviour
     [Header("Controllers")] [Space(5f)] 
     [SerializeField] private VileVendingMachineNetcodeController netcodeController;
     [SerializeField] private InteractTrigger triggerScript;
-    #pragma warning restore 0649
+#pragma warning restore 0649
     
     private bool _increasingFearLevel;
     private bool _networkEventsSubscribed;
@@ -394,7 +394,6 @@ public class VileVendingMachineClient : MonoBehaviour
         LogDebug("Cola network object reference was not null.");
 
         _currentColaBehaviour = colaNetworkObject.GetComponent<CompanyColaBehaviour>();
-        _currentColaBehaviour.isPartOfVendingMachine = true;
         _currentColaBehaviour.transform.position = colaPlaceholder.transform.position;
         _currentColaBehaviour.transform.rotation = colaPlaceholder.transform.rotation;
         _currentColaBehaviour.transform.SetParent(colaPlaceholder, false);

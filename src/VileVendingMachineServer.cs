@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using BepInEx.Logging;
 using Unity.Netcode;
@@ -12,7 +11,6 @@ using Vector3 = UnityEngine.Vector3;
 
 namespace LethalCompanyVileVendingMachine;
 
-[SuppressMessage("ReSharper", "RedundantDefaultMemberInitializer")]
 public class VileVendingMachineServer : EnemyAI
 {
     private static readonly Dictionary<string, List<Tuple<int, LeftOrRight, Vector3, Quaternion>>> StoredViablePlacements = new()
@@ -116,7 +114,7 @@ public class VileVendingMachineServer : EnemyAI
         
         // Initialize the random function and config values
         SubscribeToNetworkEvents();
-        Random.InitState(StartOfRound.Instance.randomMapSeed + _vendingMachineId.GetHashCode());
+        Random.InitState(StartOfRound.Instance.randomMapSeed + _vendingMachineId.GetHashCode() - thisEnemyIndex);
         InitializeConfigValues();
         
         netcodeController.SyncVendingMachineIdClientRpc(_vendingMachineId);
@@ -454,7 +452,6 @@ public class VileVendingMachineServer : EnemyAI
         }
         
         agent.enabled = false;
-                
         callback?.Invoke();
     }
     
@@ -539,7 +536,6 @@ public class VileVendingMachineServer : EnemyAI
             return;
         }
         
-        colaBehaviour.isPartOfVendingMachine = true;
         colaBehaviour.grabbableToEnemies = false;
         colaBehaviour.fallTime = 1f;
         
@@ -549,6 +545,7 @@ public class VileVendingMachineServer : EnemyAI
 
         NetworkObject colaNetworkObject = colaObject.GetComponent<NetworkObject>();
         colaNetworkObject.Spawn();
+        colaBehaviour.IsPartOfVendingMachine.Value = true;
         
         netcodeController.UpdateColaNetworkObjectReferenceClientRpc(_vendingMachineId, colaNetworkObject, colaScrapValue);
     }
@@ -584,7 +581,6 @@ public class VileVendingMachineServer : EnemyAI
     private IEnumerator AcceptItem()
     {
         yield return new WaitForSeconds(0.1f);
-        LogDebug("nkees");
         netcodeController.SetAnimationTriggerClientRpc(_vendingMachineId, VileVendingMachineClient.ArmRetract);
 
         // Get the scan node properties
@@ -663,11 +659,8 @@ public class VileVendingMachineServer : EnemyAI
 
     private void HandleStartAcceptItemAnimation(string receivedVendingMachineId)
     {
-        LogDebug("boi1");
         if (!IsServer) return;
-        LogDebug("boi2");
         if (_vendingMachineId != receivedVendingMachineId) return;
-        LogDebug("boi3");
         StartCoroutine(AcceptItem());
     }
 

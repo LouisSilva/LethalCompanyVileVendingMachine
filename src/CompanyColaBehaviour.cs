@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using BepInEx.Logging;
+using HarmonyLib;
+using System.Diagnostics.CodeAnalysis;
 using Unity.Netcode;
 using UnityEngine;
 using Logger = BepInEx.Logging.Logger;
@@ -13,14 +15,24 @@ public class CompanyColaBehaviour : PhysicsProp
     private ManualLogSource _mls;
     private string _colaId;
 
-    #pragma warning disable 0649
+#pragma warning disable 0649
     [SerializeField] private ScanNodeProperties innerScanNode;
     [SerializeField] private ScanNodeProperties outerScanNode;
-    #pragma warning restore 0649
-    
-    [HideInInspector] public bool isPartOfVendingMachine;
-    
-    private bool _hasBeenPickedUp;
+#pragma warning restore 0649
+
+    public readonly NetworkVariable<bool> IsPartOfVendingMachine = new();
+
+    private bool _networkEventsSubscribed;
+
+    private void OnEnable()
+    {
+        SubscribeToNetworkEvents();
+    }
+
+    private void OnDisable()
+    {
+        UnsubscribeFromNetworkEvents();
+    }
 
     public override void Start()
     {
@@ -50,14 +62,8 @@ public class CompanyColaBehaviour : PhysicsProp
 
     public override void Update()
     {
-        if (isHeld && isPartOfVendingMachine)
-        {
-            isPartOfVendingMachine = false;
-            foreach (Collider propCollider in propColliders)
-                propCollider.excludeLayers = -2621449;
-        }
-        
-        if (isPartOfVendingMachine) return;
+        if (isHeld) EvaluateIsPartOfVendingMachine();
+        if (IsPartOfVendingMachine.Value) return;
         base.Update();
     }
 
@@ -65,7 +71,7 @@ public class CompanyColaBehaviour : PhysicsProp
     {
         transform.localScale = new Vector3(1.5f, 1.5f, 1.5f);
         
-        if (isPartOfVendingMachine)
+        if (IsPartOfVendingMachine.Value)
         {
             if (transform.parent != null)
             {
@@ -80,26 +86,42 @@ public class CompanyColaBehaviour : PhysicsProp
     public override void EquipItem()
     {
         base.EquipItem();
-        isPartOfVendingMachine = false;
-
-        RemoveRigidbodyAndDoubleScanNodes();
+        EvaluateIsPartOfVendingMachine();
     }
 
     public override void GrabItem()
     {
         base.GrabItem();
-        isPartOfVendingMachine = false;
-        
-        RemoveRigidbodyAndDoubleScanNodes();
+        EvaluateIsPartOfVendingMachine();
     }
-
-    private void RemoveRigidbodyAndDoubleScanNodes()
+    
+    [ServerRpc(RequireOwnership = false)]
+    private void SetIsPartOfVendingMachineServerRpc(bool value)
     {
-        if (_hasBeenPickedUp) return;
+        IsPartOfVendingMachine.Value = value;
+    }
+    
+    private void EvaluateIsPartOfVendingMachine()
+    {
+        if (!IsPartOfVendingMachine.Value) return;
+
+        if (IsServer) IsPartOfVendingMachine.Value = false;
+        else SetIsPartOfVendingMachineServerRpc(false);
+        
+        foreach (Collider propCollider in propColliders)
+            propCollider.excludeLayers = -2621449;
+        
         Destroy(GetComponent<Rigidbody>());
         Destroy(outerScanNode);
-
-        _hasBeenPickedUp = true;
+    }
+    
+    [HarmonyPatch(typeof(BeltBagItem), nameof(BeltBagItem.PutObjectInBagLocalClient))]
+    [HarmonyPostfix]
+    [SuppressMessage("ReSharper", "InconsistentNaming")]
+    private static void TriggerHeldActions(BeltBagItem __instance, GrabbableObject gObject)
+    {
+        if (gObject is CompanyColaBehaviour companyCola)
+            companyCola.EquipItem();
     }
 
     public void UpdateScrapValue(int value)
@@ -120,6 +142,27 @@ public class CompanyColaBehaviour : PhysicsProp
             outerScanNode.scrapValue = value;
             outerScanNode.subText = $"Value: {value}";
         }
+    }
+    
+    private void OnIsPartOfVendingMachineChanged(bool oldValue, bool newValue)
+    {
+        grabbableToEnemies = !newValue;
+        grabbable = !newValue;
+        fallTime = !newValue ? 1f : 0f;
+    }
+    
+    private void SubscribeToNetworkEvents()
+    {
+        if (_networkEventsSubscribed) return;
+        IsPartOfVendingMachine.OnValueChanged += OnIsPartOfVendingMachineChanged;
+        _networkEventsSubscribed = true;
+    }
+    
+    private void UnsubscribeFromNetworkEvents()
+    {
+        if (!_networkEventsSubscribed) return;
+        IsPartOfVendingMachine.OnValueChanged -= OnIsPartOfVendingMachineChanged;
+        _networkEventsSubscribed = false;
     }
 
     [ClientRpc]

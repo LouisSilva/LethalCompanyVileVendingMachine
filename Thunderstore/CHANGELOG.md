@@ -1,3 +1,8 @@
+## 1.1.2
+* Made the vending machine compatible with v64.
+* Made the company cola compatible with the new belt bag item from v64.
+* Finally figured out how to make the vending machine a solid object, so you cant go through it anymore.
+
 ## 1.1.1
 * Fixed the bug where it would display an `ArgumentOutOfRangeException` when a company cola was spawned.
 

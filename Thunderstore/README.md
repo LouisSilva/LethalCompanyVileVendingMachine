@@ -2,7 +2,7 @@
 ![Logo](https://i.imgur.com/LinyoYH.gif)
 
 Adds a new Entity and 2 New Scrap to Lethal Company.
-Fully Compatible with v56
+Fully Compatible with v64
 
 
 # Information:

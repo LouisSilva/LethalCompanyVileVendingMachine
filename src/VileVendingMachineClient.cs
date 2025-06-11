@@ -118,10 +118,9 @@ public class VileVendingMachineClient : MonoBehaviour
     
     private void InteractVendingMachine(PlayerControllerB playerInteractor)
     {
-        if (playerInteractor == null) return;
-        if (netcodeController.IsItemOnHand.Value) return;
-        if (!playerInteractor.isHoldingObject) return;
-        if (GameNetworkManager.Instance.localPlayerController == playerInteractor) netcodeController.PlaceItemInHandServerRpc(_vendingMachineId, playerInteractor.actualClientId);
+        if (playerInteractor == null || netcodeController.IsItemOnHand.Value || !playerInteractor.isHoldingObject) return;
+        if (GameNetworkManager.Instance.localPlayerController == playerInteractor) 
+            netcodeController.PlaceItemInHandServerRpc(_vendingMachineId, playerInteractor.actualClientId);
     }
 
     private void HandlePlaceItemInHand(string receivedVendingMachineId, ulong targetPlayerId)

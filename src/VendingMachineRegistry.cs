@@ -1,27 +1,29 @@
 ﻿using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using BepInEx.Logging;
-using HarmonyLib;
+using System;
 using UnityEngine;
 
 namespace LethalCompanyVileVendingMachine;
 
-public enum LeftOrRight
+internal enum LeftOrRight
 {
     Left = 1,
     Right = 2,
 }
 
-public enum EntranceOrExit
+internal enum EntranceOrExit
 {
     Entrance = 0,
     Exit = 1
 }
 
-public static class VendingMachineRegistry
+public class VendingMachineRegistry
 {
-    private static readonly ManualLogSource Mls =
+    private static WeakReference<VendingMachineRegistry> _instanceWeakReference;
+    private static readonly object Lock = new();
+    
+    private static readonly ManualLogSource Mls = 
         new($"{VileVendingMachinePlugin.ModGuid} | Vile Vending Machine Registry");
 
     public struct VendingMachinePlacement
@@ -29,18 +31,42 @@ public static class VendingMachineRegistry
         public VileVendingMachineServer ServerScript;
         public int TeleportId;
         public Transform Transform;
-        public LeftOrRight LeftOrRight;
-        public EntranceOrExit EntranceOrExit;
+        internal LeftOrRight LeftOrRight;
+        internal EntranceOrExit EntranceOrExit;
     }
 
-    private static readonly Dictionary<string, VendingMachinePlacement> VendingMachines = new();
-    public static bool IsPlacementInProgress;
+    private readonly Dictionary<string, VendingMachinePlacement> _vendingMachines = new();
+    public bool IsPlacementInProgress;
+    
+    private VendingMachineRegistry() { }
+    
+    public static VendingMachineRegistry Instance
+    {
+        get
+        {
+            lock (Lock)
+            {
+                // Try to get the instance from the weak reference, if it hasn't been garbage collected
+                if (_instanceWeakReference != null && _instanceWeakReference.TryGetTarget(out VendingMachineRegistry instance))
+                {
+                    return instance;
+                }
 
-    public static void AddVendingMachine(string id, int teleportId, LeftOrRight leftOrRight,
+                // If the instance is null or has been garbage collected, create a new one
+                instance = new VendingMachineRegistry();
+                _instanceWeakReference = new WeakReference<VendingMachineRegistry>(instance);
+
+                return instance;
+            }
+        }
+    }
+
+
+    internal void AddVendingMachine(string id, int teleportId, LeftOrRight leftOrRight,
         EntranceOrExit entranceOrExit, Transform transform)
     {
         if (IsVendingMachineInDict(id)) return;
-
+        
         VendingMachinePlacement newVendingMachinePlacement = new()
         {
             TeleportId = teleportId,
@@ -48,55 +74,47 @@ public static class VendingMachineRegistry
             EntranceOrExit = entranceOrExit,
             Transform = transform,
         };
-
-        VendingMachines[id] = newVendingMachinePlacement;
+        
+        _vendingMachines[id] = newVendingMachinePlacement;
     }
 
-    public static void RemoveVendingMachine(string id)
+    internal void RemoveVendingMachine(string id)
     {
-        if (IsVendingMachineInDict(id)) VendingMachines.Remove(id);
+        if (IsVendingMachineInDict(id)) _vendingMachines.Remove(id);
     }
 
-    public static bool IsDoorAndSideOccupied(int teleportId, LeftOrRight leftOrRight, EntranceOrExit entranceOrExit)
+    internal bool IsDoorAndSideOccupied(int teleportId, LeftOrRight leftOrRight, EntranceOrExit entranceOrExit)
     {
-        return VendingMachines.Any(vendingMachineKeyValuePair =>
+        return _vendingMachines.Any(vendingMachineKeyValuePair =>
             vendingMachineKeyValuePair.Value.TeleportId == teleportId
             && vendingMachineKeyValuePair.Value.EntranceOrExit == entranceOrExit
             && vendingMachineKeyValuePair.Value.LeftOrRight == leftOrRight);
     }
 
-    public static bool IsDoorOccupied(int teleportId, EntranceOrExit entranceOrExit)
+    internal bool IsDoorOccupied(int teleportId, EntranceOrExit entranceOrExit)
     {
-        return VendingMachines.Any(vendingMachineKeyValuePair =>
+        return _vendingMachines.Any(vendingMachineKeyValuePair =>
             vendingMachineKeyValuePair.Value.TeleportId == teleportId
             && vendingMachineKeyValuePair.Value.EntranceOrExit == entranceOrExit);
     }
 
-    private static bool IsVendingMachineInDict(string id)
+    private bool IsVendingMachineInDict(string id)
     {
-        if (id != null) return VendingMachines.ContainsKey(id);
+        if (id != null) return _vendingMachines.ContainsKey(id);
         Mls.LogWarning("Given string id was null, this should not happen.");
         return false;
     }
 
-    public static Dictionary<string, VendingMachinePlacement> GetVendingMachineRegistry()
+    public Dictionary<string, VendingMachinePlacement> GetVendingMachineRegistry()
     {
-        return VendingMachines;
+        return _vendingMachines;
     }
 
-    public static string GetVendingMachineRegistryPrint()
+    public string GetVendingMachineRegistryPrint()
     {
-        return VendingMachines.Aggregate("",
+        return _vendingMachines.Aggregate("",
             (current, keyValuePair) =>
                 current +
                 $"Vending Machine Id: {keyValuePair.Key}, TeleportId: {keyValuePair.Value.TeleportId} EntranceOrExit: {keyValuePair.Value.EntranceOrExit}, LeftOrRight: {keyValuePair.Value.LeftOrRight}\n");
-    }
-
-    [HarmonyPatch(typeof(StartOfRound), nameof(StartOfRound.ShipLeave))]
-    [HarmonyPostfix]
-    [SuppressMessage("ReSharper", "InconsistentNaming")]
-    private static void ResetRegistryOnRoundEnd(StartOfRound __instance)
-    {
-        VendingMachines.Clear();
     }
 }

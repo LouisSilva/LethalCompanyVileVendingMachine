@@ -98,7 +98,7 @@ public class VileVendingMachineServer : EnemyAI
     /// </summary>
     public override void OnDestroy()
     {
-        VendingMachineRegistry.RemoveVendingMachine(_vendingMachineId);
+        VendingMachineRegistry.Instance.RemoveVendingMachine(_vendingMachineId);
         base.OnDestroy();
     }
 
@@ -123,6 +123,7 @@ public class VileVendingMachineServer : EnemyAI
         // This enemy shouldn't have a NavMeshAgent, but zeeker's enemyAI code needs enemies to have an agent 
         agent.updateRotation = false;
         agent.updatePosition = false;
+        agent.enabled = false;
         
         // Make the vending machine go invisible when its spawning
         //#if !DEBUG
@@ -140,7 +141,7 @@ public class VileVendingMachineServer : EnemyAI
         }
         catch (Exception)
         {
-            VendingMachineRegistry.IsPlacementInProgress = false;
+            VendingMachineRegistry.Instance.IsPlacementInProgress = false;
             throw;
         }
 
@@ -156,9 +157,9 @@ public class VileVendingMachineServer : EnemyAI
     {
         // Wait until another vending machine has finished spawning to avoid the vending machines colliding with each-other and messing up the spawning algorithm
         int checksDone = 0;
-        while (VendingMachineRegistry.IsPlacementInProgress)
+        while (VendingMachineRegistry.Instance.IsPlacementInProgress)
         {
-            LogDebug($"is placement in progress?: {VendingMachineRegistry.IsPlacementInProgress}, vending machines in registry: {VendingMachineRegistry.GetVendingMachineRegistryPrint()}");
+            LogDebug($"is placement in progress?: {VendingMachineRegistry.Instance.IsPlacementInProgress}, vending machines in registry: {VendingMachineRegistry.Instance.GetVendingMachineRegistryPrint()}");
             if (checksDone >= 30)
             {
                 PlacementFail();
@@ -169,7 +170,7 @@ public class VileVendingMachineServer : EnemyAI
             yield return new WaitForSeconds(3);
         }
         
-        VendingMachineRegistry.IsPlacementInProgress = true;
+        VendingMachineRegistry.Instance.IsPlacementInProgress = true;
         EntranceTeleport[] doors = [];
         
         // When the vending machine is spawned right at the beginning of the round, the entrance teleports haven't loaded in yet, so we need to wait a bit
@@ -213,10 +214,8 @@ public class VileVendingMachineServer : EnemyAI
                 if (!VileVendingMachineConfig.Instance.CanSpawnAtFireExitMaster.Value && door.entranceId != 0)
                     continue;
 
-                if (VendingMachineRegistry.IsDoorOccupied(door.entranceId, (EntranceOrExit)i))
-                {
+                if (VendingMachineRegistry.Instance.IsDoorOccupied(door.entranceId, (EntranceOrExit)i))
                     continue;
-                }
 
                 // See if there is a cached placement for this map
                 //#if !DEBUG
@@ -225,7 +224,7 @@ public class VileVendingMachineServer : EnemyAI
                     foreach (Tuple<int, LeftOrRight, Vector3, Quaternion> placementTuple in placement.Where(
                                  placementTuple => 
                                      placementTuple.Item1 == door.entranceId && 
-                                     !VendingMachineRegistry.IsDoorAndSideOccupied(placementTuple.Item1, placementTuple.Item2, EntranceOrExit.Entrance) &&
+                                     !VendingMachineRegistry.Instance.IsDoorAndSideOccupied(placementTuple.Item1, placementTuple.Item2, EntranceOrExit.Entrance) &&
                                      placementTuple.Item3 != Vector3.zero &&
                                      placementTuple.Item4 != Quaternion.identity))
                     {
@@ -395,7 +394,7 @@ public class VileVendingMachineServer : EnemyAI
                     yield return new WaitForFixedUpdate();
                     #endif
                 }
-
+                
                 if (!stageTwoSuccess)
                 {
                     // If both directions have been tried, abort placement and try another door
@@ -412,7 +411,7 @@ public class VileVendingMachineServer : EnemyAI
                     transform.position = new Vector3(transform.position.x,
                         hit.point.y + floorCollider.transform.localPosition.y, transform.position.z);
                 }
-                        
+                
                 // Placement was a success, finalize the details
                 LeftOrRight finalDirectionFromDoor = currentDirection == 1 ? LeftOrRight.Left : LeftOrRight.Right;
                 LogDebug($"Placement was a success, with position: {transform.position} and being in the {finalDirectionFromDoor} direction from the door.");
@@ -420,7 +419,7 @@ public class VileVendingMachineServer : EnemyAI
                 yield break;
             }
         }
-
+        
         PlacementFail();
     }
 
@@ -436,8 +435,8 @@ public class VileVendingMachineServer : EnemyAI
     {
         LogDebug($"Vending machine was placed successfully at teleportId: {teleportId}");
 
-        VendingMachineRegistry.AddVendingMachine(_vendingMachineId, teleportId, leftOrRight, entranceOrExit, transform);
-        VendingMachineRegistry.IsPlacementInProgress = false;
+        VendingMachineRegistry.Instance.AddVendingMachine(_vendingMachineId, teleportId, leftOrRight, entranceOrExit, transform);
+        VendingMachineRegistry.Instance.IsPlacementInProgress = false;
         netcodeController.PlayMaterializeVfxClientRpc(_vendingMachineId, transform.position, transform.rotation);
         yield return new WaitForSeconds(5f);
         
@@ -451,7 +450,6 @@ public class VileVendingMachineServer : EnemyAI
            LogDebug("The EnableEnemyMesh function failed");
         }
         
-        agent.enabled = false;
         callback?.Invoke();
     }
     
@@ -642,7 +640,6 @@ public class VileVendingMachineServer : EnemyAI
     
         #else
         return Physics.CheckBox(collider.bounds.center, collider.bounds.extents, collider.transform.rotation, layerMask, QueryTriggerInteraction.Ignore);
-        
         #endif
     }
 
@@ -652,7 +649,7 @@ public class VileVendingMachineServer : EnemyAI
     private void PlacementFail()
     {
         LogDebug("Vending machine could not be placed");
-        VendingMachineRegistry.IsPlacementInProgress = false;
+        VendingMachineRegistry.Instance.IsPlacementInProgress = false;
         KillEnemyServerRpc(true);
         Destroy(this);
     }
